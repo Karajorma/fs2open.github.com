@@ -16,6 +16,7 @@
 #include "globalincs/pstypes.h"
 #include "math/vecmat.h"
 #include "physics/physics.h"
+#include "object/object_flags.h"
 
 /*
  *		CONSTANTS
@@ -50,7 +51,7 @@
 
 #define UNUSED_OBJNUM		(-MAX_OBJECTS*2)	//	Newer systems use this instead of -1 for invalid object.
 
-extern char	*Object_type_names[MAX_OBJECT_TYPES];
+extern const char	*Object_type_names[MAX_OBJECT_TYPES];
 
 // each object type should have these functions:  (I will use weapon as example)
 //
@@ -69,7 +70,7 @@ extern char	*Object_type_names[MAX_OBJECT_TYPES];
 //    {Put a call to this in OBJECT.C, function obj_delete_all_that_should_be_dead }
 //    WARNING: To kill an object, set it's OF_SHOULD_BE_DEAD flag.  Then,
 //    this function will get called when it's time to clean up the data.
-//    Assert( obj->flags & OF_SHOULD_BE_DEAD );
+//    Assert( obj->flags[Object::Object_Flags::Should_be_dead] );
 //    ...
 //    ... Free up all weapon-specfic data
 //    obj_delete(objnum);
@@ -99,35 +100,8 @@ extern char	*Object_type_names[MAX_OBJECT_TYPES];
 //    ... Reducing shields, etc
 // }
 
-//Misc object flags
-#define OF_RENDERS					(1<<0)	// It renders as something ( objtype_render gets called)
-#define OF_COLLIDES					(1<<1)	// It collides with stuff (objtype_check_impact & objtype_hit gets called)
-#define OF_PHYSICS					(1<<2)	// It moves with standard physics.
-#define OF_SHOULD_BE_DEAD			(1<<3)	// this object should be dead, so next time we can, we should delete this object.
-#define OF_INVULNERABLE				(1<<4)	// invulnerable
-#define OF_PROTECTED				(1<<5)	// Don't kill this object, probably mission-critical.
-#define OF_PLAYER_SHIP				(1<<6)	// this object under control of some player -- don't do ai stuff on it!!!
-#define OF_NO_SHIELDS				(1<<7)	// object has no shield generator system (i.e. no shields)
-#define OF_JUST_UPDATED				(1<<8)	// for multiplayer -- indicates that we received object update this frame
-#define OF_COULD_BE_PLAYER			(1<<9)	// for multiplayer -- indicates that it is selectable ingame joiners as their ship
-#define OF_WAS_RENDERED				(1<<10)	// Set if this object was rendered this frame.  Only gets set if OF_RENDERS set.  Gets cleared or set in obj_render_all().
-#define OF_NOT_IN_COLL				(1<<11)	// object has not been added to collision list
-#define OF_BEAM_PROTECTED			(1<<12)	// don't fire beam weapons at this type of object, probably mission critical.
-#define OF_SPECIAL_WARPIN			(1<<13)	// Object has special warp-in enabled.
-#define OF_DOCKED_ALREADY_HANDLED	(1<<14)	// Goober5000 - a docked object that we already moved
-#define OF_TARGETABLE_AS_BOMB		(1<<15)
-#define	OF_FLAK_PROTECTED			(1<<16)	// Goober5000 - protected from flak turrets
-#define	OF_LASER_PROTECTED			(1<<17)	// Goober5000 - protected from laser turrets
-#define	OF_MISSILE_PROTECTED		(1<<18)	// Goober5000 - protected from missile turrets
-#define OF_IMMOBILE					(1<<19)	// Goober5000 - doesn't move, no matter what
-
-// Flags used by Fred
-#define OF_MARKED			(1<<29)	// Object is marked (Fred).  Can be reused in FreeSpace for anything that won't be used by Fred.
-#define OF_TEMP_MARKED		(1<<30)	// Temporarily marked (Fred).
-#define OF_HIDDEN			(1<<31)	// Object is hidden (not shown) and can't be manipulated
-
 typedef struct obj_flag_name {
-	int flag;
+	Object::Object_Flags flag;
 	char flag_name[TOKEN_LENGTH];
 	int flag_list;
 } obj_flag_name;
@@ -136,7 +110,7 @@ typedef struct obj_flag_name {
 extern obj_flag_name Object_flag_names[];
 
 struct dock_instance;
-class draw_list;
+class model_draw_list;
 
 class object
 {
@@ -148,7 +122,7 @@ public:
 	int				parent_sig;		// This object's parent's signature
 	char			parent_type;	// This object's parent's type
 	int				instance;		// which instance.  ie.. if type is Robot, then this indexes into the Robots array
-	uint			flags;			// misc flags.  Call obj_set_flags to change this.
+	flagset<Object::Object_Flags> flags;			// misc flags.  Call obj_set_flags to change this.
 	vec3d			pos;				// absolute x,y,z coordinate of center of object
 	matrix			orient;			// orientation of object in world
 	float			radius;			// 3d size of object - for collision detection
@@ -182,7 +156,7 @@ struct object_h {
 	object *objp;
 	int sig;
 
-	bool IsValid(){return (objp != NULL && objp->signature == sig);}
+	bool IsValid() const {return (objp != NULL && objp->signature == sig && sig > 0);}
 	object_h(object *in){objp=in; if(objp!=NULL){sig=in->signature;}}
 	object_h(){objp=NULL;sig=-1;}
 };
@@ -194,14 +168,17 @@ typedef struct object_orient_pos {
 } object_orient_pos;
 
 #ifdef OBJECT_CHECK
-typedef struct checkobject
+class checkobject
 {
+public:
 	int	type;
 	int	signature;
-	uint	flags;
+	flagset<Object::Object_Flags>	flags;
 	int	parent_sig;
 	int	parent_type;
-} checkobject;
+
+    checkobject();
+};
 #endif
 
 /*
@@ -231,8 +208,8 @@ extern object *Player_obj;	// Which object is the player. Has to be valid.
 // Use this instead of "objp - Objects" to get an object number
 // given it's pointer.  This way, we can replace it with a macro
 // to check that the pointer is valid for debugging.
-// https://stackoverflow.com/questions/7954439/c-which-character-should-be-used-for-ptrdiff-t-in-printf
-#define OBJ_INDEX(objp) (ptrdiff_t)(objp-Objects)
+// This code will break in 64 bit builds when we have more than 2^31 objects but that will probably never happen
+#define OBJ_INDEX(objp) (int)(objp-Objects)
 
 /*
  *		FUNCTIONS
@@ -246,11 +223,11 @@ void obj_init();
 //object.  Returns 0 if failed, otherwise object index.
 //You can pass 0 for parent if you don't care about that.
 //You can pass null for orient and/or pos if you don't care.
-int obj_create(ubyte type,int parent_obj, int instance, matrix * orient, vec3d * pos, float radius, uint flags );
+int obj_create(ubyte type,int parent_obj, int instance, matrix * orient, vec3d * pos, float radius, const flagset<Object::Object_Flags> &flags );
 
 void obj_render(object* obj);
 
-void obj_queue_render(object* obj, draw_list* scene);
+void obj_queue_render(object* obj, model_draw_list* scene);
 
 //Sorts and renders all the ojbects
 void obj_render_all(void (*render_function)(object *objp), bool* render_viewer_last );
@@ -268,7 +245,7 @@ void obj_delete(int objnum);
 void obj_merge_created_list(void);
 
 // recalculate object pairs for an object
-#define OBJ_RECALC_PAIRS(obj_to_reset)		do {	obj_set_flags(obj_to_reset, obj_to_reset->flags & ~(OF_COLLIDES)); obj_set_flags(obj_to_reset, obj_to_reset->flags | OF_COLLIDES); } while(0);
+#define OBJ_RECALC_PAIRS(obj_to_reset)		do {	obj_set_flags(obj_to_reset, obj_to_reset->flags - Object::Object_Flags::Collides); obj_set_flags(obj_to_reset, obj_to_reset->flags + Object::Object_Flags::Collides); } while(0);
 
 // Removes any occurances of object 'a' from the pairs list.
 void obj_remove_pairs( object * a );
@@ -292,7 +269,6 @@ void obj_init_all_ships_physics();
 float get_hull_pct(object *objp);
 float get_sim_hull_pct(object *objp);
 float get_shield_pct(object *objp);
-float get_max_shield_quad(object *objp);
 
 // returns the average 3-space position of all ships.  useful to find "center" of battle (sort of)
 void obj_get_average_ship_pos(vec3d *pos);
@@ -307,11 +283,7 @@ void obj_player_fire_stuff( object *objp, control_info ci );
 // actually turn the object collision detection off.  By calling
 // this you shouldn't get Int3's in the checkobject code.  If you
 // do, then put code in here to correctly handle the case.
-void obj_set_flags(object *obj, uint new_flags);
-
-// get the Ship_info flags for a given ship (if you have the object)
-int obj_get_SIF(object *objp);
-int obj_get_SIF(int obj);
+void obj_set_flags(object *obj, const flagset<Object::Object_Flags>& new_flags);
 
 // get the team for any object
 int obj_team(object *objp);
@@ -332,9 +304,37 @@ void obj_client_post_interpolate();
 // move an observer object in multiplayer
 void obj_observer_move(float frame_time);
 
-// Goober5000
+/**
+ * @brief Checks if the given object is docked with anyone.
+ *
+ * @returns Nonzero if docked, or
+ * @returns 0 if not docked
+ *
+ * @author Goober5000
+ */
 int object_is_docked(object *objp);
+
+/**
+ * @brief Checks if the given object is dead-docked with anyone.
+ *
+ * @returns Nonzero if docked, or
+ * @returns 0 if not docked
+ *
+ * @details An object is "dead-docked" when it is dying and still has objects docked to it. The dead_dock list is
+ *   populated when the object dies, and is used later on to jettison and maybe damage the docked objects.
+ *
+ * @author Goober5000
+ */
 int object_is_dead_docked(object *objp);
+
+/**
+ * @brief Moves a docked object to keep up with the parent object as it moves
+ *
+ * @param[in,out] objp The docked object
+ * @param[in]     parent_objp The object that it's docked to
+ *
+ * @author Goober5000
+ */
 void obj_move_one_docked_object(object *objp, object *parent_objp);
 
 //WMC

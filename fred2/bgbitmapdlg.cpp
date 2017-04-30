@@ -18,7 +18,6 @@
 #include "bmpman/bmpman.h"
 #include "FREDView.h"
 #include "FREDDoc.h"
-#include "palman/palman.h"
 #include "starfield/nebula.h"
 #include "nebula/neb.h"
 #include "nebula/neblightning.h"
@@ -276,7 +275,7 @@ void bg_bitmap_dlg::create()
 		
 	// determine if a full Neb2 is active - load in the full nebula filenames or the partial neb
 	// filenames
-	m_fullneb = (The_mission.flags & MISSION_FLAG_FULLNEB) ? 1 : 0;
+	m_fullneb = (The_mission.flags[Mission::Mission_Flags::Fullneb]) ? 1 : 0;
 	if(m_fullneb){
 		((CButton*)GetDlgItem(IDC_FULLNEB))->SetCheck(1);
 	} else {
@@ -293,7 +292,7 @@ void bg_bitmap_dlg::create()
 		m_heading = Nebula_heading;
 	}
 
-	m_toggle_trails = (The_mission.flags & MISSION_FLAG_TOGGLE_SHIP_TRAILS) ? 1 : 0;
+	m_toggle_trails = (The_mission.flags[Mission::Mission_Flags::Toggle_ship_trails]) ? 1 : 0;
 	((CButton*)GetDlgItem(IDC_NEB_TOGGLE_TRAILS))->SetCheck(m_toggle_trails);
 
 	// setup background numbering
@@ -315,7 +314,7 @@ void bg_bitmap_dlg::create()
 	bitmap_data_init();
 	
 	// determine if subspace is active
-	m_subspace = (The_mission.flags & MISSION_FLAG_SUBSPACE) ? 1 : 0;
+	m_subspace = (The_mission.flags[Mission::Mission_Flags::Subspace]) ? 1 : 0;
 
 	m_amb_red.SetRange(1,255);
 	m_amb_green.SetRange(1,255);
@@ -358,7 +357,7 @@ void bg_bitmap_dlg::OnClose()
 	Mission_palette = m_nebula_color;
 	
 	if(m_fullneb){		
-		The_mission.flags |= MISSION_FLAG_FULLNEB;
+		The_mission.flags.set(Mission::Mission_Flags::Fullneb);
 		Neb2_awacs = (float)atoi((LPCSTR)m_neb_intensity);
 
 		// override dumb values with reasonable ones
@@ -399,18 +398,14 @@ void bg_bitmap_dlg::OnClose()
 		// init the nebula
 		neb2_level_init();
 	} else {
-		The_mission.flags &= ~MISSION_FLAG_FULLNEB;		
+        The_mission.flags.remove(Mission::Mission_Flags::Fullneb);
 		Nebula_index = m_nebula_index - 1;
 		Neb2_awacs = -1.0f;
 		strcpy_s(Neb2_texture_name, "");
 	}
 
 	// check for no ship trails -C
-	if( m_toggle_trails ) {
-		The_mission.flags |= MISSION_FLAG_TOGGLE_SHIP_TRAILS;
-	} else {
-		The_mission.flags &= ~MISSION_FLAG_TOGGLE_SHIP_TRAILS;
-	}
+    The_mission.flags.set(Mission::Mission_Flags::Toggle_ship_trails, m_toggle_trails != 0);
 
 	// get selected storm
 	((CComboBox*)GetDlgItem(IDC_NEB2_LIGHTNING))->GetLBText(((CComboBox*)GetDlgItem(IDC_NEB2_LIGHTNING))->GetCurSel(), Mission_parse_storm_name);
@@ -424,11 +419,7 @@ void bg_bitmap_dlg::OnClose()
 		nebula_close();
 	}
 
-	if (m_subspace){
-		The_mission.flags |= MISSION_FLAG_SUBSPACE;				
-	} else {
-		The_mission.flags &= ~MISSION_FLAG_SUBSPACE;		
-	}
+    The_mission.flags.set(Mission::Mission_Flags::Subspace, m_subspace != 0);
 
 	string_copy(The_mission.skybox_model, m_skybox_model, NAME_LENGTH, 1);
 	string_copy(The_mission.envmap_name, m_envmap, NAME_LENGTH, 1);
@@ -494,18 +485,6 @@ void bg_bitmap_dlg::OnSelchangeNebcolor()
 
 	UpdateData(TRUE);
 	Mission_palette = m_nebula_color;
-
-
-	char palette_filename[1024];
-
-	Assert( Mission_palette >= 0 );
-	Assert( Mission_palette <= 98 );
-
-	sprintf( palette_filename, "gamepalette%d-%02d", 1, Mission_palette+1 );
-
-	mprintf(( "Loading palette %s\n", palette_filename ));
-
-	palette_load_table(palette_filename);
 	
 	Update_window = 1;
 }
@@ -678,7 +657,7 @@ void bg_bitmap_dlg::sun_data_init()
 	}		
 
 	// if we have at least one item, select it
-	if (background->suns.size() > 0)
+	if (!background->suns.empty())
 	{
 		clb->SetCurSel(0);
 		OnSunChange();
@@ -842,7 +821,7 @@ void bg_bitmap_dlg::bitmap_data_init()
 	}		
 
 	// if we have at least one item, select it
-	if (background->bitmaps.size() > 0)
+	if (!background->bitmaps.empty())
 	{
 		clb->SetCurSel(0);
 		OnBitmapChange();

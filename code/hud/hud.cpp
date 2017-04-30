@@ -1088,7 +1088,7 @@ bool HudGauge::canRender()
 	}
 
 	if (gauge_config == HUD_ETS_GAUGE) {
-		if (Ships[Player_obj->instance].flags2 & SF2_NO_ETS) {
+		if (Ships[Player_obj->instance].flags[Ship::Ship_Flags::No_ets]) {
 			return false;
 		}
 	}
@@ -1192,7 +1192,7 @@ void HUD_init()
 	HUD_draw     = 1;
 	HUD_disable_except_messages = 0;
 
-	if(The_mission.flags & MISSION_FLAG_FULLNEB){
+	if(The_mission.flags[Mission::Mission_Flags::Fullneb]){
 		HUD_contrast = 1;
 	}
 
@@ -1252,7 +1252,7 @@ void hud_close()
 		num_gauges = it->hud_gauges.size();
 
 		for(j = 0; j < num_gauges; j++) {
-			vm_free(it->hud_gauges[j]);
+			delete it->hud_gauges[j];
 			it->hud_gauges[j] = NULL;
 		}
 		it->hud_gauges.clear();
@@ -1384,7 +1384,7 @@ void hud_update_frame(float frametime)
 	if (Player_ai->target_objnum == -1){
 		retarget = 1;
 	} else if (Objects[Player_ai->target_objnum].type == OBJ_SHIP) {
-		if (Ships[Objects[Player_ai->target_objnum].instance].flags & SF_DYING){
+		if (Ships[Objects[Player_ai->target_objnum].instance].flags[Ship::Ship_Flags::Dying]){
 			if (timestamp_elapsed(Ships[Objects[Player_ai->target_objnum].instance].final_death_time)) {
 				retarget = 1;
 			}
@@ -1395,8 +1395,8 @@ void hud_update_frame(float frametime)
 	// only do this is not retargeting
 	if ((!retarget) && (Player_ai->target_objnum != -1)) {
 		if (Objects[Player_ai->target_objnum].type == OBJ_SHIP) {
-			if ( !(Ships[Objects[Player_ai->target_objnum].instance].flags & SF_DYING) ) {
-				if ( Ship_info[Ships[Objects[Player_ai->target_objnum].instance].ship_info_index].flags & (SIF_BIG_SHIP | SIF_HUGE_SHIP) ) {
+			if ( !(Ships[Objects[Player_ai->target_objnum].instance].flags[Ship::Ship_Flags::Dying]) ) {
+				if ( Ship_info[Ships[Objects[Player_ai->target_objnum].instance].ship_info_index].is_big_or_huge() ) {
 					ship_subsys *ss = Player_ai->targeted_subsys;
 					if (ss != NULL) {
 						if ((ss->system_info->type == SUBSYSTEM_TURRET) && (ss->current_hits == 0)) {
@@ -1476,7 +1476,7 @@ void hud_update_frame(float frametime)
 	int stop_targetting_this_thing = 0;
 
 	// check to see if the target is still alive
-	if ( targetp->flags&OF_SHOULD_BE_DEAD ) {
+	if ( targetp->flags[Object::Object_Flags::Should_be_dead] ) {
 		stop_targetting_this_thing = 1;
 	}
 
@@ -1486,10 +1486,10 @@ void hud_update_frame(float frametime)
 	if ( targetp->type == OBJ_SHIP ) {
 		Assert ( targetp->instance >=0 && targetp->instance < MAX_SHIPS );
 		target_shipp = &Ships[targetp->instance];
-		Player->target_is_dying = target_shipp->flags & SF_DYING;
+		Player->target_is_dying = target_shipp->flags[Ship::Ship_Flags::Dying];
 
 		// If it is warping out (or exploded), turn off targeting
-		if ( target_shipp->flags & (SF_DEPART_WARP|SF_EXPLODED) ) {
+		if ( target_shipp->flags[Ship::Ship_Flags::Depart_warp] || target_shipp->flags[Ship::Ship_Flags::Exploded] ) {
 			stop_targetting_this_thing = 1;
 		}
 	}
@@ -1715,12 +1715,12 @@ void hud_maybe_display_supernova()
  */
 void hud_render_all()
 {
-	size_t i;
+	int i;
 
 	hud_render_gauges();
 
 	// start rendering cockpit dependent gauges if possible
-	for ( i = 0; i < Player_displays.size(); ++i ) {
+	for ( i = 0; i < (int)Player_displays.size(); ++i ) {
 		hud_render_gauges(i);
 	}
 
@@ -1761,6 +1761,8 @@ void hud_render_gauges(int cockpit_display_num)
 		num_gauges = sip->hud_gauges.size();
 
 		for(j = 0; j < num_gauges; j++) {
+			GR_DEBUG_SCOPE("Render HUD gauge");
+
 			// only preprocess gauges if we're not rendering to cockpit
 			if ( cockpit_display_num < 0 ) {
 				sip->hud_gauges[j]->preprocess();
@@ -1784,6 +1786,8 @@ void hud_render_gauges(int cockpit_display_num)
 		num_gauges = default_hud_gauges.size();
 
 		for(j = 0; j < num_gauges; j++) {
+			GR_DEBUG_SCOPE("Render HUD gauge");
+
 			default_hud_gauges[j]->preprocess();
 
 			default_hud_gauges[j]->onFrame(flFrametime);
@@ -1991,14 +1995,9 @@ void HudGaugeDamage::render(float frametime)
 {
 	model_subsystem	*psub;
 	ship_subsys			*pss;
-	int					sx, sy, bx, by, w, h, screen_integrity, num, best_str, best_index;
+	int					screen_integrity, num, best_str, best_index;
 	float					strength, shield, integrity;
-	char					buf[128];
 	hud_subsys_damage	hud_subsys_list[SUBSYSTEM_MAX];	
-
-	if ( (Player_ship->ship_max_hull_strength - Player_obj->hull_strength) <= 1.0f ) {
-		return;
-	}
 
 	if ( damage_top.first_frame == -1 ) {
 		return;
@@ -2007,47 +2006,11 @@ void HudGaugeDamage::render(float frametime)
 	if ( (The_mission.game_type & MISSION_TYPE_TRAINING) && Training_message_visible ){
 		return;
 	}
-		
-	hud_get_target_strength(Player_obj, &shield, &integrity);
-	screen_integrity = fl2i(integrity*100);
-
-	if ( hud_gauge_is_popup(gauge_config) ) {
-		if ( screen_integrity >= 100 ) {
-			return;
-		}
-	}
 
 	if ( timestamp_elapsed(Damage_flash_timer) ) {
 		Damage_flash_timer = timestamp(DAMAGE_FLASH_TIME);
 		Damage_flash_bright = !Damage_flash_bright;
 	}
-
-	setGaugeColor();
-
-	// Draw the top of the damage pop-up
-	renderBitmap(damage_top.first_frame, position[0], position[1]);	
-	renderString(position[0] + header_offsets[0], position[1] + header_offsets[1], XSTR( "damage", 218));
-
-	// Show hull integrity
-	if ( screen_integrity < 100 ) {		
-		if ( screen_integrity == 0 ) {
-			screen_integrity = 1;
-		}
-		sprintf(buf, XSTR( "%d%%", 219), screen_integrity);
-		hud_num_make_mono(buf, font_num);
-		gr_get_string_size(&w, &h, buf);
-		if ( screen_integrity < 30 ) {
-			gr_set_color_fast(&Color_red);
-		}
-		renderString(position[0] + hull_integ_offsets[0], position[1] + hull_integ_offsets[1], XSTR( "Hull Integrity", 220));
-		renderString(position[0] + hull_integ_val_offset_x - w, position[1] + hull_integ_offsets[1], buf);
-	} 
-
-	// Show damaged subsystems
-	sx = position[0] + subsys_integ_start_offsets[0];
-	sy = position[1] + subsys_integ_start_offsets[1];
-	bx = position[0];
-	by = position[1] + middle_frame_start_offset_y;
 
 	num = 0;
 	for ( pss = GET_FIRST(&Player_ship->subsys_list); pss !=END_OF_LIST(&Player_ship->subsys_list); pss = GET_NEXT(pss) ) {
@@ -2084,6 +2047,15 @@ void HudGaugeDamage::render(float frametime)
 		}
 	}
 
+	// Build a list of damage values to display and then actually display them in a second pass
+	// This allows to hide the gauge when there is no damage
+	SCP_vector<DamageInfo> info_lines;
+
+	auto sx = position[0] + subsys_integ_start_offsets[0];
+	auto sy = position[1] + subsys_integ_start_offsets[1];
+	auto bx = position[0];
+	auto by = position[1] + middle_frame_start_offset_y;
+
 	int type;
 	for ( int i = 0; i < num; i++ ) {
 		best_str = 1000;
@@ -2098,10 +2070,11 @@ void HudGaugeDamage::render(float frametime)
 		Assert(best_index >= 0);
 		Assert(best_str >= 0);
 
-		setGaugeColor();
+		DamageInfo info;
 
-		renderBitmap(damage_middle.first_frame, bx, by);
-		by += line_h;
+		info.draw_background = true;
+		info.background_x = bx;
+		info.background_y = by;
 
 		type = hud_subsys_list[best_index].type;
 		if ( !timestamp_elapsed( Pl_hud_subsys_info[type].flash_duration_timestamp ) ) {
@@ -2112,9 +2085,7 @@ void HudGaugeDamage::render(float frametime)
 			
 			if ( flash_status ) {
 				int alpha_color = MIN(HUD_COLOR_ALPHA_MAX,HUD_color_alpha+HUD_BRIGHT_DELTA);
-				setGaugeColor(alpha_color);
-			} else {				
-				setGaugeColor();
+				info.bright_index = alpha_color;
 			}
 		}
 
@@ -2122,36 +2093,46 @@ void HudGaugeDamage::render(float frametime)
 		if ( best_str < 30 ) {
 			if ( best_str <= 0 ) {
 				if ( Damage_flash_bright ) {
-					gr_set_color_fast(&Color_bright_red);
+					info.color_override = &Color_bright_red;
 				} else {
-					gr_set_color_fast(&Color_red);
+					info.color_override = &Color_red;
 				}
-
 			} else {
-				gr_set_color_fast(&Color_red);
+				info.color_override = &Color_red;
 			}
-		} else {
-			setGaugeColor();
-		}		
+		}
 
-		char *n_firstline;
+		const char *n_firstline;
 		n_firstline = strrchr(hud_subsys_list[best_index].name, '|');
 		if (n_firstline) {
 			// Print only the last line
 			n_firstline++;
-			renderString(sx, sy, n_firstline);
+			info.name = n_firstline;
 		} else {
 			char temp_name[NAME_LENGTH];
 			strcpy_s(temp_name, hud_subsys_list[best_index].name);
 			hud_targetbox_truncate_subsys_name(temp_name);
-			renderString(sx, sy, temp_name);
+			info.name = temp_name;
 		}
 
+		char buf[128];
 		sprintf(buf, XSTR( "%d%%", 219), best_str);
 		hud_num_make_mono(buf, font_num);
+
+		int w, h;
 		gr_get_string_size(&w, &h, buf);
-		renderString(position[0] + subsys_integ_val_offset_x - w, sy, buf);
+
+		info.value_x = position[0] + subsys_integ_val_offset_x - w;
+		info.value_y = sy;
+		info.strength = best_str;
+
+		info.name_x = sx;
+		info.name_y = sy;
+
+		by += line_h;
 		sy += line_h;
+
+		info_lines.push_back(info);
 
 		// Remove it from hud_subsys_list
 		if ( best_index < (num-i-1) ) {
@@ -2159,8 +2140,82 @@ void HudGaugeDamage::render(float frametime)
 		}
 	}
 
+	hud_get_target_strength(Player_obj, &shield, &integrity);
+	screen_integrity = fl2i(integrity*100);
+
+	// Show hull integrity if it's below 100% or if a subsystem is damaged
+	// The second case is just to make the display look complete
+	// The third case is there to make the gauge appear only if needed if the right option is set
+	if ( screen_integrity < 100 || !info_lines.empty() ) {
+		DamageInfo info;
+
+		info.name = XSTR( "Hull Integrity", 220);
+
+		if ( screen_integrity == 0 ) {
+			screen_integrity = 1;
+		}
+		info.strength = screen_integrity;
+
+		char buf[128];
+		sprintf(buf, XSTR( "%d%%", 219), screen_integrity);
+		hud_num_make_mono(buf, font_num);
+
+		int w, h;
+		gr_get_string_size(&w, &h, buf);
+
+		if ( screen_integrity < 30 ) {
+			info.color_override = &Color_red;
+		}
+
+		info.name_x = position[0] + hull_integ_offsets[0];
+		info.name_y = position[1] + hull_integ_offsets[1];
+
+		info.value_x = position[0] + hull_integ_val_offset_x - w;
+		info.value_y = position[1] + hull_integ_offsets[1];
+
+		// Insert at the top since hull is always first
+		info_lines.insert(info_lines.begin(), info);
+	}
+
+	if (info_lines.empty()) {
+		// Nothing to display, return before dawing anything
+		return;
+	}
+
 	setGaugeColor();
-	renderBitmap(damage_bottom.first_frame, bx, by + bottom_bg_offset);		
+
+	// Draw the top of the damage pop-up
+	renderBitmap(damage_top.first_frame, position[0], position[1]);
+	renderString(position[0] + header_offsets[0], position[1] + header_offsets[1], XSTR( "damage", 218));
+
+	// These variables keep track of where the background was drawn last so we can draw the bottom correctly
+	int last_bx = position[0];
+	int last_by = position[1] + middle_frame_start_offset_y;
+	for (auto& line : info_lines) {
+		if (line.draw_background) {
+			renderBitmap(damage_middle.first_frame, line.background_x, line.background_y);
+			last_bx = line.background_x;
+			last_by = line.background_y + line_h; // Add line_h here so that the footer is properly aligned
+		}
+
+		char buf[128];
+		sprintf(buf, XSTR( "%d%%", 219), line.strength);
+		hud_num_make_mono(buf, font_num);
+
+		if (line.color_override != nullptr) {
+			gr_set_color_fast(line.color_override);
+		} else {
+			setGaugeColor(line.bright_index);
+		}
+
+		renderString(line.name_x, line.name_y, line.name.c_str());
+		renderString(line.value_x, line.value_y, buf);
+
+		setGaugeColor();
+	}
+
+	setGaugeColor();
+	renderBitmap(damage_bottom.first_frame, last_bx, last_by + bottom_bg_offset);
 }
 
 /** 
@@ -2274,7 +2329,6 @@ void hud_num_make_mono(char *num_str, int font_num)
 		return;
 	}
 
-	int len, i;
 	ubyte sc;
 
 	sc = lcl_get_font_index(font_num);
@@ -2283,8 +2337,8 @@ void hud_num_make_mono(char *num_str, int font_num)
 		return;
 	}
 
-	len = strlen(num_str);
-	for ( i = 0; i < len; i++ ) {
+	size_t len = strlen(num_str);
+	for (size_t i = 0; i < len; i++ ) {
 		if ( num_str[i] == '1' ) {
 			num_str[i] = (char)(sc + 1);
 		}
@@ -2663,11 +2717,13 @@ int hud_support_find_closest( int objnum )
 
 	sop = GET_FIRST(&Ship_obj_list);
 	while(sop != END_OF_LIST(&Ship_obj_list)){
-		if ( Ship_info[Ships[Objects[sop->objnum].instance].ship_info_index].flags & SIF_SUPPORT ) {
+		if ( Ship_info[Ships[Objects[sop->objnum].instance].ship_info_index].flags[Ship::Info_Flags::Support] ) {
 			int pship_index, sindex;
 
 			// make sure support ship is not dying
-			if ( !(Ships[Objects[sop->objnum].instance].flags & (SF_DYING|SF_EXPLODED)) ) {
+            auto shipp = &Ships[Objects[sop->objnum].instance];
+            
+			if ( !(shipp->flags[Ship::Ship_Flags::Dying] || shipp->flags[Ship::Ship_Flags::Exploded]) ) {
 
 				Assert( objp->type == OBJ_SHIP );
 				aip = &Ai_info[Ships[Objects[sop->objnum].instance].ai_index];
@@ -2810,7 +2866,7 @@ void HudGaugeSupport::render(float frametime)
 	}
 
 	show_time = 0;
-	if (Player_ai->ai_flags & AIF_BEING_REPAIRED) {
+	if (Player_ai->ai_flags[AI::AI_Flags::Being_repaired]) {
 		Assert(Player_ship->ship_max_hull_strength > 0);
 		
 		if (!Cmdline_rearm_timer)
@@ -2853,7 +2909,7 @@ void HudGaugeSupport::render(float frametime)
 		}
 		renderStringAlignCenter(position[0], position[1] + text_val_offset_y, w, outstr);
 	}
-	else if (Player_ai->ai_flags & AIF_REPAIR_OBSTRUCTED) {
+	else if (Player_ai->ai_flags[AI::AI_Flags::Repair_obstructed]) {
 		strcpy_s(outstr, XSTR( "obstructed", 229));
 		renderStringAlignCenter(position[0], position[1] + text_val_offset_y, w, outstr);
 	} else {
@@ -3042,7 +3098,7 @@ void hud_gauge_popup_start(int gauge_index, int time)
 
 	size_t num_gauges, i;
 
-	if(Ship_info[Player_ship->ship_info_index].hud_gauges.size() > 0) {
+	if(!Ship_info[Player_ship->ship_info_index].hud_gauges.empty()) {
 		num_gauges = Ship_info[Player_ship->ship_info_index].hud_gauges.size();
 
 		for(i = 0; i < num_gauges; i++) {
@@ -3072,7 +3128,7 @@ void hud_gauge_start_flash(int gauge_index)
 	HUD_gauge_flash_duration[gauge_index] = timestamp(HUD_GAUGE_FLASH_DURATION);
 	HUD_gauge_flash_next[gauge_index] = 1;
  
-	if(Ship_info[Player_ship->ship_info_index].hud_gauges.size() > 0) {
+	if(!Ship_info[Player_ship->ship_info_index].hud_gauges.empty()) {
 		num_gauges = Ship_info[Player_ship->ship_info_index].hud_gauges.size();
 
 		for(i = 0; i < num_gauges; i++) {
@@ -3701,7 +3757,7 @@ void hud_page_in()
 	size_t j, num_gauges = 0;
 	for (auto it = Ship_info.cbegin(); it != Ship_info.cend(); ++it) {
 		if(it->hud_enabled) {
-			if(it->hud_gauges.size() > 0) {
+			if(!it->hud_gauges.empty()) {
 				num_gauges = it->hud_gauges.size();
 
 				for(j = 0; j < num_gauges; j++) {
@@ -3724,7 +3780,7 @@ HudGauge* hud_get_gauge(const char* name)
 	size_t j;
 
 	// go through all gauges and return the gauge that matches
-	if(Ship_info[Player_ship->ship_info_index].hud_gauges.size() > 0) {
+	if(!Ship_info[Player_ship->ship_info_index].hud_gauges.empty()) {
 		for(j = 0; j < Ship_info[Player_ship->ship_info_index].hud_gauges.size(); j++) {
 
 			gauge_name = Ship_info[Player_ship->ship_info_index].hud_gauges[j]->getCustomGaugeName();

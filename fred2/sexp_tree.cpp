@@ -42,12 +42,11 @@
 #include "hud/hudartillery.h"
 #include "iff_defs/iff_defs.h"
 #include "mission/missionmessage.h"
-#include "graphics/gropenglshader.h"
-#include "graphics/gropenglpostprocessing.h"
+#include "graphics/opengl/gropenglshader.h"
+#include "graphics/opengl/gropenglpostprocessing.h"
 #include "sound/ds.h"
 #include "globalincs/alphacolors.h"
 #include "localization/localize.h"
-#include "EditContainerDlg.h"
 
 #define TREE_NODE_INCREMENT	100
 
@@ -57,7 +56,6 @@
 #define ID_VARIABLE_MENU	0xda00
 #define ID_ADD_MENU			0xdc00
 #define ID_REPLACE_MENU		0xde00
-#define ID_CONTAINER_MENU	0xce00
 // note: stay below 0xe000 so we don't collide with MFC defines..
 
 #ifdef _DEBUG
@@ -171,14 +169,6 @@ int sexp_tree::load_branch(int index, int parent)
 	char combined_var_name[2*TOKEN_LENGTH + 2];
 
 	while (index != -1) {
-		int additional_flags = SEXPT_VALID ;
-		// special check for containers
-		if (parent != -1) {
-			if (tree_nodes[parent].type & SEXPT_CONTAINER) {
-				additional_flags |= SEXPT_MODIFIER;
-			}
-		}
-
 		Assert(Sexp_nodes[index].type != SEXP_NOT_USED);
 		if (Sexp_nodes[index].subtype == SEXP_ATOM_LIST) {
 			load_branch(Sexp_nodes[index].first, parent);  // do the sublist and continue
@@ -190,7 +180,7 @@ int sexp_tree::load_branch(int index, int parent)
 				flag = 1;
 			}
 
-			set_node(cur, (SEXPT_OPERATOR | additional_flags ), Sexp_nodes[index].text);
+			set_node(cur, (SEXPT_OPERATOR | SEXPT_VALID), Sexp_nodes[index].text);
 			load_branch(Sexp_nodes[index].rest, cur);  // operator is new parent now
 			return cur;  // 'rest' was just used, so nothing left to use.
 
@@ -198,25 +188,19 @@ int sexp_tree::load_branch(int index, int parent)
 			cur = allocate_node(parent);
 			if (Sexp_nodes[index].type & SEXP_FLAG_VARIABLE) {
 				get_combined_variable_name(combined_var_name, Sexp_nodes[index].text);
-				set_node(cur, (SEXPT_VARIABLE | SEXPT_NUMBER | additional_flags), combined_var_name);
-			}else {
-				set_node(cur, (SEXPT_NUMBER | additional_flags), Sexp_nodes[index].text);
+				set_node(cur, (SEXPT_VARIABLE | SEXPT_NUMBER | SEXPT_VALID), combined_var_name);
+			} else {
+				set_node(cur, (SEXPT_NUMBER | SEXPT_VALID), Sexp_nodes[index].text);
 			}
 
 		} else if (Sexp_nodes[index].subtype == SEXP_ATOM_STRING) {
 			cur = allocate_node(parent);
 			if (Sexp_nodes[index].type & SEXP_FLAG_VARIABLE) {
 				get_combined_variable_name(combined_var_name, Sexp_nodes[index].text);
-				set_node(cur, (SEXPT_VARIABLE | SEXPT_STRING | additional_flags), combined_var_name);
+				set_node(cur, (SEXPT_VARIABLE | SEXPT_STRING | SEXPT_VALID), combined_var_name);
 			} else {
-				set_node(cur, (SEXPT_STRING | additional_flags), Sexp_nodes[index].text);
+				set_node(cur, (SEXPT_STRING | SEXPT_VALID), Sexp_nodes[index].text);
 			}
-
-		} else if (Sexp_nodes[index].subtype == SEXP_ATOM_CONTAINER) {
-			cur = allocate_node(parent);
-			int container_index = get_index_sexp_container_name(Sexp_nodes[index].text);
-			set_node(cur, (SEXPT_CONTAINER | SEXPT_STRING | additional_flags ), Sexp_containers[container_index].container_name.c_str());
-			load_branch(Sexp_nodes[index].first, cur);  // operator is new parent now
 
 		} else
 			Assert(0);  // unknown and/or invalid sexp type
@@ -264,7 +248,7 @@ int sexp_tree::save_tree(int node)
 // get variable name from sexp_tree node .text
 void var_name_from_sexp_tree_text(char *var_name, const char *text)
 {
-	int var_name_length = strcspn(text, "(");
+	auto var_name_length = strcspn(text, "(");
 	Assert(var_name_length < TOKEN_LENGTH - 1);
 
 	strncpy(var_name, text, var_name_length);
@@ -286,21 +270,11 @@ int sexp_tree::save_branch(int cur, int at_root)
 			if ((tree_nodes[cur].parent >= 0) && !at_root) {
 				node = alloc_sexp("", SEXP_LIST, SEXP_ATOM_LIST, node, -1);
 			}
-		}else if (tree_nodes[cur].type & SEXPT_CONTAINER) {
-			int container_index = get_index_sexp_container_name(tree_nodes[cur].text); 
-			if (Sexp_containers[container_index].type & SEXP_CONTAINER_MAP) {
-				node = alloc_sexp(tree_nodes[cur].text, (SEXP_ATOM | SEXP_FLAG_MAP_CONTAINER), SEXP_ATOM_CONTAINER, save_branch(tree_nodes[cur].child), -1);
-			}
-			else if (Sexp_containers[container_index].type & SEXP_CONTAINER_LIST) {
-				node = alloc_sexp(tree_nodes[cur].text, (SEXP_ATOM | SEXP_FLAG_LIST_CONTAINER), SEXP_ATOM_CONTAINER, save_branch(tree_nodes[cur].child), -1);
-			}
 		} else if (tree_nodes[cur].type & SEXPT_NUMBER) {
 			// allocate number, maybe variable
 			if (tree_nodes[cur].type & SEXPT_VARIABLE) {
 				var_name_from_sexp_tree_text(var_name_text, tree_nodes[cur].text);
 				node = alloc_sexp(var_name_text, (SEXP_ATOM | SEXP_FLAG_VARIABLE), SEXP_ATOM_NUMBER, -1, -1);
-			} else if (tree_nodes[cur].type & SEXPT_MODIFIER) {
-				node = alloc_sexp(tree_nodes[cur].text, (SEXP_ATOM | SEXP_FLAG_CONTAINER_MODIFIER) , SEXP_ATOM_NUMBER, -1, -1);
 			} else {
 				node = alloc_sexp(tree_nodes[cur].text, SEXP_ATOM, SEXP_ATOM_NUMBER, -1, -1);
 			}
@@ -309,8 +283,6 @@ int sexp_tree::save_branch(int cur, int at_root)
 			if (tree_nodes[cur].type & SEXPT_VARIABLE) {
 				var_name_from_sexp_tree_text(var_name_text, tree_nodes[cur].text);
 				node = alloc_sexp(var_name_text, (SEXP_ATOM | SEXP_FLAG_VARIABLE), SEXP_ATOM_STRING, -1, -1);
-			} else if (tree_nodes[cur].type & SEXPT_MODIFIER ){
-				node = alloc_sexp(tree_nodes[cur].text, (SEXP_ATOM | SEXP_FLAG_CONTAINER_MODIFIER), SEXP_ATOM_STRING, -1, -1);
 			} else {
 				node = alloc_sexp(tree_nodes[cur].text, SEXP_ATOM, SEXP_ATOM_STRING, -1, -1);
 			}
@@ -357,7 +329,7 @@ int sexp_tree::allocate_node()
 	// need more tree nodes?
 	if (node < 0)
 	{
-		int old_size = tree_nodes.size();
+		int old_size = (int)tree_nodes.size();
 
 		Assert(TREE_NODE_INCREMENT > 0);
 
@@ -528,10 +500,6 @@ void sexp_tree::add_sub_tree(int node, HTREEITEM root)
 		if (tree_nodes[node].type & SEXPT_VARIABLE) {
 			tree_nodes[node].flags = NOT_EDITABLE;
 			bitmap = BITMAP_VARIABLE;
-		}
-		else if (tree_nodes[node].type & SEXPT_CONTAINER) {
-			bitmap = BITMAP_CONTAINER;
-			tree_nodes[node].flags = NOT_EDITABLE;
 		} else {
 			tree_nodes[node].flags = EDITABLE;
 			bitmap = get_data_image(node);
@@ -547,10 +515,7 @@ void sexp_tree::add_sub_tree(int node, HTREEITEM root)
 		if (tree_nodes[node].type & SEXPT_OPERATOR)	{
 			add_sub_tree(node, root);
 
-		} else if (tree_nodes[node].type & SEXPT_CONTAINER) {
-			add_sub_tree(node, root);
-		}
-		else {
+		} else {
 			Assert(tree_nodes[node].child == -1);
 			if (tree_nodes[node].type & SEXPT_VARIABLE) {
 				tree_nodes[node].handle = insert(tree_nodes[node].text, BITMAP_VARIABLE, BITMAP_VARIABLE, root);
@@ -604,7 +569,6 @@ void sexp_tree::setup_selected(HTREEITEM h)
 // handler for right mouse button clicks.
 void sexp_tree::right_clicked(int mode)
 {
-	char buf[256];
 	int i, j, z, count, op, add_type, replace_type, type, subcategory_id;
 	sexp_list_item *list;
 	UINT _flags;
@@ -615,7 +579,6 @@ void sexp_tree::right_clicked(int mode)
 	CMenu *replace_op_menu, replace_op_submenu[MAX_OP_MENUS];
 	CMenu *insert_op_menu, insert_op_submenu[MAX_OP_MENUS];
 	CMenu *replace_variable_menu = NULL;
-	CMenu *replace_container_menu = NULL;
 	CMenu add_op_subcategory_menu[MAX_SUBMENUS];
 	CMenu replace_op_subcategory_menu[MAX_SUBMENUS];
 	CMenu insert_op_subcategory_menu[MAX_SUBMENUS];
@@ -643,6 +606,7 @@ void sexp_tree::right_clicked(int mode)
 		i = popup_menu->GetMenuItemCount();
 		while (i--) {
 			if ( (mptr = popup_menu->GetSubMenu(i)) > 0 ) {
+				char buf[256];
 				popup_menu->GetMenuString(i, buf, sizeof(buf), MF_BYPOSITION);
 
 				if (!stricmp(buf, "add operator")) {
@@ -662,9 +626,6 @@ void sexp_tree::right_clicked(int mode)
 
 				} else if (!stricmp(buf, "replace variable")) {
 					replace_variable_menu = mptr;
-
-				} else if (!stricmp(buf, "replace container")) {
-					replace_container_menu = mptr;
 				}
 			}
 		}
@@ -687,7 +648,6 @@ void sexp_tree::right_clicked(int mode)
 		replace_op_menu->DeleteMenu(ID_PLACEHOLDER, MF_BYCOMMAND);
 		insert_op_menu->DeleteMenu(ID_PLACEHOLDER, MF_BYCOMMAND);
 		replace_variable_menu->DeleteMenu(ID_PLACEHOLDER, MF_BYCOMMAND);
-		replace_container_menu->DeleteMenu(ID_PLACEHOLDER, MF_BYCOMMAND);
 
 		// get item_index
 		item_index = -1;
@@ -697,149 +657,137 @@ void sexp_tree::right_clicked(int mode)
 				break;
 			}
 		}
+
+		/*
+		Goober5000 - allow variables in all modes;
+		the restriction seems unnecessary IMHO
 		
-		menu.EnableMenuItem(ID_SEXP_TREE_ADD_VARIABLE, MF_ENABLED);
-		menu.EnableMenuItem(ID_SEXP_TREE_MODIFY_VARIABLE, MF_ENABLED);
-		
-		// check not root (-1)
-		if (item_index >= 0) {
-			// get type of sexp_tree item clicked on
-			int type = get_type(h);
-
-			int parent = tree_nodes[item_index].parent;
-			if (parent >= 0) {
-				op = get_operator_index(tree_nodes[parent].text);
-				Assert(op >= 0 || tree_nodes[parent].type & SEXPT_CONTAINER);
-				int first_arg = tree_nodes[parent].child;
-
-				// get arg count of item to replace
-				Replace_count = 0;
-				int temp = first_arg;
-				while (temp != item_index) {
-					Replace_count++;
-					temp = tree_nodes[temp].next;
-
-					// DB - added 3/4/99
-					if(temp == -1){
-						break;
-					}
-				}
-
-				int op_type; 
-
-				if ( op >= 0) {
-					op_type = query_operator_argument_type(op, Replace_count); // check argument type at this position
-				}
-				else {
-					Assert(tree_nodes[parent].type & SEXPT_CONTAINER);
-					int container_index = get_index_sexp_container_name(tree_nodes[parent].text);
-					op_type = Sexp_containers[container_index].opf_type; 					
-				}
-
-				// Goober5000 - given the above, we have to figure out what type this stands for
-				if (op_type == OPF_AMBIGUOUS)
-				{
-					int modify_type = get_modify_variable_type(parent);
-					if (modify_type == OPF_NUMBER) {
-						type = SEXPT_NUMBER;
-					} else if (modify_type == OPF_AMBIGUOUS) {
-						type = SEXPT_STRING;
-					} else {
-						Int3();
-						type = tree_nodes[first_arg].type;
-					}
-				}
-
-				// Goober5000 - certain types accept both integers and a list of strings
-				if (op_type == OPF_GAME_SND || op_type == OPF_WEAPON_BANK_NUMBER)
-				{
-					type = SEXPT_NUMBER | SEXPT_STRING;
-				}
-				
-				if ( (type & SEXPT_STRING) || (type & SEXPT_NUMBER) ) {
-
-					int max_sexp_vars = MAX_SEXP_VARIABLES;
-					// prevent collisions in id numbers: ID_VARIABLE_MENU + 512 = ID_ADD_MENU
-					Assert(max_sexp_vars < 512);
-
-					for (int idx=0; idx<max_sexp_vars; idx++) {
-						if (Sexp_variables[idx].type & SEXP_VARIABLE_SET) {
-							// skip block variables
-							if (Sexp_variables[idx].type & SEXP_VARIABLE_BLOCK) {
-								continue; 
-							}
-
-							UINT flag = MF_STRING | MF_GRAYED;
-							// maybe gray flag MF_GRAYED
-
-							// get type -- gray "string" or number accordingly
-							if ( type & SEXPT_STRING ) {
-								if ( Sexp_variables[idx].type & SEXP_VARIABLE_STRING ) {
-									flag &= ~MF_GRAYED;
-								}
-							}
-							if ( type & SEXPT_NUMBER ) {
-								if ( Sexp_variables[idx].type & SEXP_VARIABLE_NUMBER ) {
-									flag &= ~MF_GRAYED;
-								}
-							}
-
-							// if modify-variable and changing variable, enable all variables
-							if (op_type == OPF_VARIABLE_NAME) {
-								Modify_variable = 1;
-								flag &= ~MF_GRAYED;
-							} else {
-								Modify_variable = 0;
-							}
-
-							// enable navsystem always
-							if (op_type == OPF_NAV_POINT)
-								flag &= ~MF_GRAYED;
-
-							if (!( (idx + 3) % 30)) {
-								flag |= MF_MENUBARBREAK;
-							}
-
-							char buf[128];
-							// append list of variable names and values
-							// set id as ID_VARIABLE_MENU + idx
-							sprintf(buf, "%s (%s)", Sexp_variables[idx].variable_name, Sexp_variables[idx].text);
-
-							replace_variable_menu->AppendMenu(flag, (ID_VARIABLE_MENU + idx), buf);
-						}
-					}
-					
-
-					// now deal with SEXP containers
-
-					for ( int idx = 0; idx < (int)Sexp_containers.size(); idx++ ) {
-
-						UINT flag = MF_STRING | MF_GRAYED;
-
-						if (type & SEXPT_STRING ) {
-							if (Sexp_containers[idx].type & SEXP_CONTAINER_STRING_DATA ) {
-								flag &= ~MF_GRAYED;
-							}
-						}
-
-						if ( type & SEXPT_NUMBER ) {
-							if (Sexp_containers[idx].type & SEXP_CONTAINER_NUMBER_DATA ) {
-								flag &= ~MF_GRAYED;
-							}
-						}
-
-						replace_container_menu->AppendMenu(flag, (ID_CONTAINER_MENU + idx), Sexp_containers[idx].container_name.c_str()); 
-					}
-				}
-			}
-		}
-	
-
-		// can't modify if no variables
-		if (sexp_variable_count() == 0) {
+		// Do SEXP_VARIABLE stuff here.
+		if (m_mode != MODE_EVENTS)
+		{
+			// only allow variables in event mode
+			menu.EnableMenuItem(ID_SEXP_TREE_ADD_VARIABLE, MF_GRAYED);
 			menu.EnableMenuItem(ID_SEXP_TREE_MODIFY_VARIABLE, MF_GRAYED);
 		}
-		
+		else
+		*/
+		{
+			menu.EnableMenuItem(ID_SEXP_TREE_ADD_VARIABLE, MF_ENABLED);
+			menu.EnableMenuItem(ID_SEXP_TREE_MODIFY_VARIABLE, MF_ENABLED);
+			
+			// check not root (-1)
+			if (item_index >= 0) {
+				// get type of sexp_tree item clicked on
+				type = get_type(h);
+
+				int parent = tree_nodes[item_index].parent;
+				if (parent >= 0) {
+					op = get_operator_index(tree_nodes[parent].text);
+					Assert(op >= 0);
+					int first_arg = tree_nodes[parent].child;
+
+					// get arg count of item to replace
+					Replace_count = 0;
+					int temp = first_arg;
+					while (temp != item_index) {
+						Replace_count++;
+						temp = tree_nodes[temp].next;
+
+						// DB - added 3/4/99
+						if(temp == -1){
+							break;
+						}
+					}
+
+					int op_type = query_operator_argument_type(op, Replace_count); // check argument type at this position
+
+					// special case don't allow replace data for variable names
+					// Goober5000 - why?  the only place this happens is when replacing the ambiguous argument in
+					// modify-variable with a variable, which seems legal enough.
+					//if (op_type != OPF_AMBIGUOUS) {
+
+						// Goober5000 - given the above, we have to figure out what type this stands for
+						if (op_type == OPF_AMBIGUOUS)
+						{
+							int modify_type = get_modify_variable_type(parent);
+							if (modify_type == OPF_NUMBER) {
+								type = SEXPT_NUMBER;
+							} else if (modify_type == OPF_AMBIGUOUS) {
+								type = SEXPT_STRING;
+							} else {
+								Int3();
+								type = tree_nodes[first_arg].type;
+							}
+						}
+
+						// Goober5000 - certain types accept both integers and a list of strings
+						if (op_type == OPF_GAME_SND || op_type == OPF_WEAPON_BANK_NUMBER)
+						{
+							type = SEXPT_NUMBER | SEXPT_STRING;
+						}
+						
+						if ( (type & SEXPT_STRING) || (type & SEXPT_NUMBER) ) {
+
+							int max_sexp_vars = MAX_SEXP_VARIABLES;
+							// prevent collisions in id numbers: ID_VARIABLE_MENU + 512 = ID_ADD_MENU
+							Assert(max_sexp_vars < 512);
+
+							for (int idx=0; idx<max_sexp_vars; idx++) {
+								if (Sexp_variables[idx].type & SEXP_VARIABLE_SET) {
+									// skip block variables
+									if (Sexp_variables[idx].type & SEXP_VARIABLE_BLOCK) {
+										continue; 
+									}
+
+									UINT flags = MF_STRING | MF_GRAYED;
+									// maybe gray flag MF_GRAYED
+
+									// get type -- gray "string" or number accordingly
+									if ( type & SEXPT_STRING ) {
+										if ( Sexp_variables[idx].type & SEXP_VARIABLE_STRING ) {
+											flags &= ~MF_GRAYED;
+										}
+									}
+									if ( type & SEXPT_NUMBER ) {
+										if ( Sexp_variables[idx].type & SEXP_VARIABLE_NUMBER ) {
+											flags &= ~MF_GRAYED;
+										}
+									}
+
+									// if modify-variable and changing variable, enable all variables
+									if (op_type == OPF_VARIABLE_NAME) {
+										Modify_variable = 1;
+										flags &= ~MF_GRAYED;
+									} else {
+										Modify_variable = 0;
+									}
+
+									// enable navsystem always
+									if (op_type == OPF_NAV_POINT)
+										flags &= ~MF_GRAYED;
+
+									if (!( (idx + 3) % 30)) {
+										flags |= MF_MENUBARBREAK;
+									}
+
+									char buf[128];
+									// append list of variable names and values
+									// set id as ID_VARIABLE_MENU + idx
+									sprintf(buf, "%s (%s)", Sexp_variables[idx].variable_name, Sexp_variables[idx].text);
+
+									replace_variable_menu->AppendMenu(flags, (ID_VARIABLE_MENU + idx), buf);
+								}
+							}
+						}
+					//}
+				}
+			}
+
+			// can't modify if no variables
+			if (sexp_variable_count() == 0) {
+				menu.EnableMenuItem(ID_SEXP_TREE_MODIFY_VARIABLE, MF_GRAYED);
+			}
+		}
 
 		// add all the submenu items first
 		for (i=0; i<Num_submenus; i++)
@@ -892,6 +840,7 @@ void sexp_tree::right_clicked(int mode)
 							case OP_TECH_ADD_INTEL:
 							case OP_HUD_GAUGE_SET_ACTIVE:
 							case OP_HUD_ACTIVATE_GAUGE_TYPE:
+							case OP_JETTISON_CARGO_DELAY:
 								j = Num_op_menus;	// don't allow these operators to be visible
 								break;
 						}
@@ -934,6 +883,7 @@ void sexp_tree::right_clicked(int mode)
 							case OP_TECH_ADD_INTEL:
 							case OP_HUD_GAUGE_SET_ACTIVE:
 							case OP_HUD_ACTIVATE_GAUGE_TYPE:
+							case OP_JETTISON_CARGO_DELAY:
 								j = Num_submenus;	// don't allow these operators to be visible
 								break;
 						}
@@ -999,42 +949,7 @@ void sexp_tree::right_clicked(int mode)
 
 		// change enabled status of 'add' type menu options.
 		add_type = 0;
-
-		if (tree_nodes[item_index].type & SEXPT_CONTAINER) {
-			add_type = OPR_STRING;
-
-			// when dealing with multidimentional containers the next thing we want to add could literally be any legal key for any map or the legal entries for a list container. So give the FREDder a hand and offer them the latter.
-			list = get_listing_opf(OPF_LIST_MODIFIER, item_index, Add_count);
-			Assert (list);
-
-			if (list) {
-				sexp_list_item *ptr;
-
-				int data_idx = 0;
-				ptr = list;
-				while (ptr) {
-					if (ptr->op >= 0) {
-						// enable operators with correct return type
-						menu.EnableMenuItem(Operators[ptr->op].value, MF_ENABLED);
-
-					} else {
-						// add data
-						if ( (data_idx + 3) % 30) {
-							add_data_menu->AppendMenu(MF_STRING | MF_ENABLED, ID_ADD_MENU + data_idx, ptr->text);
-						} else {
-							add_data_menu->AppendMenu(MF_MENUBARBREAK | MF_STRING | MF_ENABLED, ID_ADD_MENU + data_idx, ptr->text);
-						}
-					}
-
-					data_idx++;
-					ptr = ptr->next;
-				}
-			}
-				
-			menu.EnableMenuItem(ID_ADD_NUMBER, MF_ENABLED);
-			menu.EnableMenuItem(ID_ADD_STRING, MF_ENABLED);
-		}
-		else if (tree_nodes[item_index].flags & OPERAND)	{
+		if (tree_nodes[item_index].flags & OPERAND)	{
 			add_type = OPR_STRING;
 			int child = tree_nodes[item_index].child;
 			Add_count = count_args(child);
@@ -1116,18 +1031,12 @@ void sexp_tree::right_clicked(int mode)
 		if (parent >= 0) {
 			replace_type = OPR_STRING;
 			op = get_operator_index(tree_nodes[parent].text);
-			Assert(op >= 0 || tree_nodes[parent].type & SEXPT_CONTAINER);
+			Assert(op >= 0);
 			int first_arg = tree_nodes[parent].child;
 			count = count_args(tree_nodes[parent].child);
 
-			if (op >= 0) {
-				// already at minimum number of arguments?
-				if (count <= Operators[op].min) {
-					menu.EnableMenuItem(ID_DELETE, MF_GRAYED);
-				}
-			}
-			else if ( (tree_nodes[parent].type & SEXPT_CONTAINER) && (count == 1))
-			{
+			// already at minimum number of arguments?
+			if (count <= Operators[op].min) {
 				menu.EnableMenuItem(ID_DELETE, MF_GRAYED);
 			}
 
@@ -1144,39 +1053,25 @@ void sexp_tree::right_clicked(int mode)
 				}
 			}
 
-			if (op >= 0) {
-				// maybe gray delete
-				for (i=Replace_count+1; i<count; i++) {
-					if (query_operator_argument_type(op, i-1) != query_operator_argument_type(op, i)) {
-						menu.EnableMenuItem(ID_DELETE, MF_GRAYED);
-						break;
-					}
+			// maybe gray delete
+			for (i=Replace_count+1; i<count; i++) {
+				if (query_operator_argument_type(op, i-1) != query_operator_argument_type(op, i)) {
+					menu.EnableMenuItem(ID_DELETE, MF_GRAYED);
+					break;
 				}
 			}
 
-			if (op >= 0) {
-				type = query_operator_argument_type(op, Replace_count); 
-			}
-			else {
-				Assert(tree_nodes[parent].type & SEXPT_CONTAINER);
-				int container_index = get_index_sexp_container_name(tree_nodes[parent].text);
-				type = Sexp_containers[container_index].opf_type; 					
-			}
+			type = query_operator_argument_type(op, Replace_count); // check argument type at this position
 
 			// special case reset type for ambiguous
 			if (type == OPF_AMBIGUOUS) {
 				type = get_modify_variable_type(parent);
 			}
 
-			// Do not use return type if this is a container modifier as they use their own list of possible arguments
-			if (tree_nodes[item_index].type & SEXPT_MODIFIER) {
-				list = modifier_get_listing_opf(parent, Replace_count);
-			}
-			else {
-				list = get_listing_opf(type, parent, Replace_count);
-			}
-			
-			if( (type != OPF_VARIABLE_NAME) && list) {
+			list = get_listing_opf(type, parent, Replace_count);
+
+			// special case don't allow replace data for variable names
+			if ( (type != OPF_VARIABLE_NAME) && list) {
 				sexp_list_item *ptr;
 
 				int data_idx = 0;
@@ -1232,9 +1127,25 @@ void sexp_tree::right_clicked(int mode)
 				menu.EnableMenuItem(ID_REPLACE_STRING, MF_ENABLED);
 			}
 
-			if (op >= 0) {
-				// modify string or number if (modify_variable)
-				if ( Operators[op].value == OP_MODIFY_VARIABLE ) {
+			// modify string or number if (modify_variable)
+			if ( Operators[op].value == OP_MODIFY_VARIABLE ) {
+				int modify_type = get_modify_variable_type(parent);
+
+				if (modify_type == OPF_NUMBER) {
+					menu.EnableMenuItem(ID_REPLACE_NUMBER, MF_ENABLED);
+					menu.EnableMenuItem(ID_REPLACE_STRING, MF_GRAYED);
+				}
+				// no change for string type
+			}
+			else if ( Operators[op].value == OP_SET_VARIABLE_BY_INDEX ) {
+				// it depends on which argument we are modifying
+				// first argument is always a number
+				if (Replace_count == 0) {
+					menu.EnableMenuItem(ID_REPLACE_NUMBER, MF_ENABLED);
+					menu.EnableMenuItem(ID_REPLACE_STRING, MF_GRAYED);
+				}
+				// second argument could be anything
+				else {
 					int modify_type = get_modify_variable_type(parent);
 
 					if (modify_type == OPF_NUMBER) {
@@ -1242,24 +1153,6 @@ void sexp_tree::right_clicked(int mode)
 						menu.EnableMenuItem(ID_REPLACE_STRING, MF_GRAYED);
 					}
 					// no change for string type
-				}
-				else if ( Operators[op].value == OP_SET_VARIABLE_BY_INDEX ) {
-					// it depends on which argument we are modifying
-					// first argument is always a number
-					if (Replace_count == 0) {
-						menu.EnableMenuItem(ID_REPLACE_NUMBER, MF_ENABLED);
-						menu.EnableMenuItem(ID_REPLACE_STRING, MF_GRAYED);
-					}
-					// second argument could be anything
-					else {
-						int modify_type = get_modify_variable_type(parent);
-
-						if (modify_type == OPF_NUMBER) {
-							menu.EnableMenuItem(ID_REPLACE_NUMBER, MF_ENABLED);
-							menu.EnableMenuItem(ID_REPLACE_STRING, MF_GRAYED);
-						}
-						// no change for string type
-					}
 				}
 			}
 
@@ -1293,7 +1186,7 @@ void sexp_tree::right_clicked(int mode)
 		Assert(z >= -1);
 		if (z != -1) {
 			op = get_operator_index(tree_nodes[z].text);
-			Assert(op >= 0 || tree_nodes[z].type & SEXPT_CONTAINER);
+			Assert(op != -1);
 			j = tree_nodes[z].child;
 			count = 0;
 			while (j != item_index) {
@@ -1301,16 +1194,7 @@ void sexp_tree::right_clicked(int mode)
 				j = tree_nodes[j].next;
 			}
 
-			if ( op >= 0) {
-				type = query_operator_argument_type(op, count); 
-			}
-			else {
-				Assert(tree_nodes[parent].type & SEXPT_CONTAINER);
-				int container_index = get_index_sexp_container_name(tree_nodes[z].text);
-				type = Sexp_containers[container_index].opf_type; 					
-			}
-
-			// check argument type at this position
+			type = query_operator_argument_type(op, count); // check argument type at this position
 
 		} else {
 			if (m_mode == MODE_EVENTS)
@@ -1387,12 +1271,6 @@ void sexp_tree::right_clicked(int mode)
 
 				if (add_type == z)
 					menu.EnableMenuItem(ID_EDIT_PASTE_SPECIAL, MF_ENABLED);
-
-			} else if (Sexp_nodes[Sexp_clipboard].subtype == SEXP_ATOM_CONTAINER) {
-				int container_idx = get_index_sexp_container_name(CTEXT(Sexp_clipboard)); 
-				// z = Sexp_containers[container_idx].opf_type; 
-				menu.EnableMenuItem(ID_EDIT_PASTE, MF_ENABLED);
-				menu.EnableMenuItem(ID_EDIT_PASTE_SPECIAL, MF_ENABLED);
 
 			} else if (Sexp_nodes[Sexp_clipboard].subtype == SEXP_ATOM_NUMBER) {
 				if ((replace_type == OPR_POSITIVE) && (atoi(CTEXT(Sexp_clipboard)) > -1))
@@ -1499,11 +1377,6 @@ int sexp_tree::edit_label(HTREEITEM h)
 		return 0;
 	}
 
-	// Containers must also be edited through dialog box
-	if (tree_nodes[i].type & SEXPT_CONTAINER) {
-		return 0;
-	}
-
 	// Don't edit if not flaged as editable
 	if (!(tree_nodes[i].flags & EDITABLE)) {
 		return 0;
@@ -1542,7 +1415,7 @@ int sexp_tree::end_label_edit(TVITEMA &item)
 {
 	HTREEITEM h = item.hItem; 
 	char *str = item.pszText;
-	int len, r = 1;	
+	int r = 1;	
 	bool update_node = true; 
 	uint node;
 
@@ -1559,7 +1432,7 @@ int sexp_tree::end_label_edit(TVITEMA &item)
 
 	if (node == tree_nodes.size()) {
 		if (m_mode == MODE_EVENTS) {
-			item_index = GetItemData(h);
+			item_index = (int)GetItemData(h);
 			Assert(Event_editor_dlg);
 			node = Event_editor_dlg->handler(ROOT_RENAMED, item_index, str);
 			return 1;
@@ -1587,19 +1460,17 @@ int sexp_tree::end_label_edit(TVITEMA &item)
 
 	// gotta sidestep Goober5000's number hack and check entries are actually positive. 
 	else if (tree_nodes[node].type & SEXPT_NUMBER) {
-		if (!(tree_nodes[node].type & SEXPT_MODIFIER) ) {
-			if (query_node_argument_type(node) == OPF_POSITIVE) {			
-				int val = atoi(str); 
-				if (val < 0) {
-					MessageBox("Can not enter a negative value", "Invalid Number", MB_ICONEXCLAMATION); 
-					update_node = false; 
-				}
+		if (query_node_argument_type(node) == OPF_POSITIVE) {			
+			int val = atoi(str); 
+			if (val < 0) {
+				MessageBox("Can not enter a negative value", "Invalid Number", MB_ICONEXCLAMATION); 
+				update_node = false; 
 			}
-		}
+		}		
 	}
 
 	// Error checking would not hurt here
-	len = strlen(str);
+	auto len = strlen(str);
 	if (len >= TOKEN_LENGTH)
 		len = TOKEN_LENGTH - 1;
 
@@ -1687,7 +1558,7 @@ const char *sexp_tree::match_closest_operator(const char *str, int node)
 // this really only handles messages generated by the right click popup menu
 BOOL sexp_tree::OnCommand(WPARAM wParam, LPARAM lParam)
 {
-	int i, z, id, node, op, type;
+	int i, z, id, node, op;
 	sexp_list_item *list, *ptr;
 	HTREEITEM h;
 
@@ -1696,59 +1567,6 @@ BOOL sexp_tree::OnCommand(WPARAM wParam, LPARAM lParam)
 
 	id = LOWORD(wParam);
 
-	// Add Container
-	if (id == ID_EDIT_SEXP_TREE_EDIT_CONTAINERS) {
-		CEditContainerDlg dlg; 
-
-		// get pointer to tree
-		dlg.m_p_sexp_tree = this;
-
-		dlg.DoModal();
-		/*
-
-		if ( dlg.m_create ) {			
-			sexp_container temp; 
-			if (dlg.m_type_list) {
-				temp.type = SEXP_CONTAINER_LIST; 
-			}
-			else if (dlg.m_type_map) {
-				temp.type = SEXP_CONTAINER_MAP; 
-			}
-			else {
-				Warning(LOCATION, "Unknown container type. Skipping...."); 
-				return 1;
-			}
-
-			temp.container_name.assign(dlg.m_container_name); 
-
-			if (dlg.m_type_number) {
-				temp.type |= SEXP_CONTAINER_NUMBER_DATA;
-			}
-			else {
-				temp.type |= SEXP_CONTAINER_STRING_DATA;
-			}
-
-			if ( dlg.m_type_map ) {
-				// move the data into the new entry
-				temp.map_data.clear();
-				for (int i = 0; i < (int)dlg.raw_data.size(); i = i+2) {
-					temp.map_data.insert(std::pair<SCP_string, SCP_string>(dlg.raw_data[i], dlg.raw_data[i+1]));
-				}
-			}
-			else if (dlg.m_type_list ) {
-				temp.list_data.clear();
-				for (int i = 0; i < (int)dlg.raw_data.size(); i++) {
-					temp.list_data.push_back(dlg.raw_data[i]);
-				}
-			}
-
-			// add it to our list of containers
-			Sexp_containers.push_back(temp);
-
-		}
-		*/
-		return 1;
-	}
 
 	// Add variable
 	if (id == ID_SEXP_TREE_ADD_VARIABLE) {
@@ -1904,18 +1722,12 @@ BOOL sexp_tree::OnCommand(WPARAM wParam, LPARAM lParam)
 
 
 	if ((id >= ID_ADD_MENU) && (id < ID_ADD_MENU + 511)) {
-		Assert(item_index >= 0);		
+		Assert(item_index >= 0);
+		op = get_operator_index(tree_nodes[item_index].text);
+		Assert(op >= 0);
 
-		if (tree_nodes[item_index].type & SEXPT_CONTAINER) {
-			list = get_listing_opf(OPF_LIST_MODIFIER, tree_nodes[item_index].parent, Add_count, true);
-		}
-		else {
-			op = get_operator_index(tree_nodes[item_index].text);
-			Assert(op >= 0);
-
-			type = query_operator_argument_type(op, Add_count);
-			list = get_listing_opf(type, item_index, Add_count);
-		}
+		auto type = query_operator_argument_type(op, Add_count);
+		list = get_listing_opf(type, item_index, Add_count);
 		Assert(list);
 
 		id -= ID_ADD_MENU;
@@ -1936,17 +1748,11 @@ BOOL sexp_tree::OnCommand(WPARAM wParam, LPARAM lParam)
 	if ((id >= ID_REPLACE_MENU) && (id < ID_REPLACE_MENU + 511)) {
 		Assert(item_index >= 0);
 		Assert(tree_nodes[item_index].parent >= 0);
+		op = get_operator_index(tree_nodes[tree_nodes[item_index].parent].text);
+		Assert(op >= 0);
 
-		if (tree_nodes[item_index].type & SEXPT_MODIFIER) {
-			list = modifier_get_listing_opf(tree_nodes[item_index].parent, Replace_count);
-		}
-		else {
-			op = get_operator_index(tree_nodes[tree_nodes[item_index].parent].text);
-			Assert(op >= 0);
-
-			type = query_operator_argument_type(op, Replace_count); // check argument type at this position
-			list = get_listing_opf(type, tree_nodes[item_index].parent, Replace_count);
-		}
+		auto type = query_operator_argument_type(op, Replace_count); // check argument type at this position
+		list = get_listing_opf(type, tree_nodes[item_index].parent, Replace_count);
 		Assert(list);
 
 		id -= ID_REPLACE_MENU;
@@ -1958,26 +1764,10 @@ BOOL sexp_tree::OnCommand(WPARAM wParam, LPARAM lParam)
 		}
 
 		Assert((SEXPT_TYPE(ptr->type) != SEXPT_OPERATOR) && (ptr->op < 0));
-
 		expand_operator(item_index);
 		replace_data(ptr->text, ptr->type);
 		list->destroy();
 		return 1;
-	}
-
-	if ((id >= ID_CONTAINER_MENU) && (id < ID_CONTAINER_MENU + 511)) {
-		Assert(item_index >= 0);
-
-		int container_index = id - ID_CONTAINER_MENU;
-		Assertion( (container_index >= 0) && (container_index < (int)Sexp_containers.size()), "Unknown Container");
-
-		int type = get_type(item_handle);
-		Assert( (type & SEXPT_NUMBER) || (type & SEXPT_STRING) );
-
-		replace_container_data(container_index, (type | SEXPT_CONTAINER)); 
-
-		HTREEITEM h = tree_nodes[item_index].handle;
-		expand_branch(h);
 	}
 
 	for (op=0; op<Num_operators; op++) {
@@ -2068,25 +1858,7 @@ BOOL sexp_tree::OnCommand(WPARAM wParam, LPARAM lParam)
 					}
 				}
 
-			}
-			else if (Sexp_nodes[Sexp_clipboard].subtype == SEXP_ATOM_CONTAINER) {
-				expand_operator(item_index);
-				int container_idx = get_index_sexp_container_name(Sexp_nodes[Sexp_clipboard].text);
-				// don't add the default data cause we're still adding that stuff from the clipboard
-				int container_replace_type = tree_nodes[item_index].type | SEXPT_CONTAINER;
-				replace_container_data(container_idx, container_replace_type, false, true, false);
-				if (Sexp_nodes[Sexp_clipboard].rest != -1) {
-					Warning(LOCATION, "Paste error. Clipboard should contain more data than just the name of the container"); 
-					break;
-				}
-				load_branch(Sexp_nodes[Sexp_clipboard].first, item_index);
-				i = tree_nodes[item_index].child;
-				while (i != -1) {
-					add_sub_tree(i, tree_nodes[item_index].handle);
-					i = tree_nodes[i].next;
-				}
-			}
-			else if (Sexp_nodes[Sexp_clipboard].subtype == SEXP_ATOM_NUMBER) {
+			} else if (Sexp_nodes[Sexp_clipboard].subtype == SEXP_ATOM_NUMBER) {
 				Assert(Sexp_nodes[Sexp_clipboard].rest == -1);
 				if (Sexp_nodes[Sexp_clipboard].type & SEXP_FLAG_VARIABLE) {
 					int var_idx = get_index_sexp_variable_name(Sexp_nodes[Sexp_clipboard].text);
@@ -2095,12 +1867,7 @@ BOOL sexp_tree::OnCommand(WPARAM wParam, LPARAM lParam)
 				}
 				else {
 					expand_operator(item_index);
-					if (Sexp_nodes[Sexp_clipboard].type & SEXP_FLAG_CONTAINER_MODIFIER) { 
-						replace_data(CTEXT(Sexp_clipboard), (SEXPT_NUMBER | SEXPT_MODIFIER | SEXPT_VALID));
-					}
-					else {
-						replace_data(CTEXT(Sexp_clipboard), (SEXPT_NUMBER | SEXPT_VALID));
-					}
+					replace_data(CTEXT(Sexp_clipboard), (SEXPT_NUMBER | SEXPT_VALID));
 				}
 
 			} else if (Sexp_nodes[Sexp_clipboard].subtype == SEXP_ATOM_STRING) {
@@ -2112,12 +1879,7 @@ BOOL sexp_tree::OnCommand(WPARAM wParam, LPARAM lParam)
 				}
 				else {
 					expand_operator(item_index);
-					if (Sexp_nodes[Sexp_clipboard].type & SEXP_FLAG_CONTAINER_MODIFIER) { 
-						replace_data(CTEXT(Sexp_clipboard), (SEXPT_STRING | SEXPT_MODIFIER | SEXPT_VALID));
-					}
-					else {
-						replace_data(CTEXT(Sexp_clipboard), (SEXPT_STRING | SEXPT_VALID));
-					}
+					replace_data(CTEXT(Sexp_clipboard), (SEXPT_STRING | SEXPT_VALID));
 				}
 
 			} else
@@ -2143,41 +1905,16 @@ BOOL sexp_tree::OnCommand(WPARAM wParam, LPARAM lParam)
 						i = tree_nodes[i].next;
 					}
 				}
-			}
-			else if (Sexp_nodes[Sexp_clipboard].subtype == SEXP_ATOM_CONTAINER) {
-				expand_operator(item_index);
-				// don't add the default data cause we're still adding that stuff from the clipboard
-				add_container_data(Sexp_nodes[Sexp_clipboard].text, false);
-				if (Sexp_nodes[Sexp_clipboard].rest != -1) {
-					Warning(LOCATION, "Paste error. Clipboard should contain more data than just the name of the container"); 
-					break;
-				}
-				load_branch(Sexp_nodes[Sexp_clipboard].first, item_index);
-				i = tree_nodes[item_index].child;
-				while (i != -1) {
-					add_sub_tree(i, tree_nodes[item_index].handle);
-					i = tree_nodes[i].next;
-				}
-			}
-			else if (Sexp_nodes[Sexp_clipboard].subtype == SEXP_ATOM_NUMBER) {
+
+			} else if (Sexp_nodes[Sexp_clipboard].subtype == SEXP_ATOM_NUMBER) {
 				Assert(Sexp_nodes[Sexp_clipboard].rest == -1);
 				expand_operator(item_index);
-				if ( Sexp_nodes[Sexp_clipboard].type & SEXP_FLAG_CONTAINER_MODIFIER) { 
-					add_data(CTEXT(Sexp_clipboard), (SEXPT_NUMBER | SEXPT_MODIFIER | SEXPT_VALID));
-				}
-				else {
-					add_data(CTEXT(Sexp_clipboard), (SEXPT_NUMBER | SEXPT_VALID));
-				}
+				add_data(CTEXT(Sexp_clipboard), (SEXPT_NUMBER | SEXPT_VALID));
 
 			} else if (Sexp_nodes[Sexp_clipboard].subtype == SEXP_ATOM_STRING) {
 				Assert(Sexp_nodes[Sexp_clipboard].rest == -1);
 				expand_operator(item_index);
-				if ( Sexp_nodes[Sexp_clipboard].type & SEXP_FLAG_CONTAINER_MODIFIER) { 
-					add_data(CTEXT(Sexp_clipboard), (SEXPT_STRING | SEXPT_MODIFIER | SEXPT_VALID));
-				}
-				else {
-					add_data(CTEXT(Sexp_clipboard), (SEXPT_STRING | SEXPT_VALID));
-				}
+				add_data(CTEXT(Sexp_clipboard), (SEXPT_STRING | SEXPT_VALID));
 
 			} else
 				Assert(0);  // unknown and/or invalid sexp type
@@ -2208,35 +1945,20 @@ BOOL sexp_tree::OnCommand(WPARAM wParam, LPARAM lParam)
 	
 		case ID_REPLACE_NUMBER:
 			expand_operator(item_index);
-			if (tree_nodes[item_index].type & SEXPT_MODIFIER) {
-				replace_data("number", (SEXPT_NUMBER | SEXPT_MODIFIER | SEXPT_VALID));
-			}
-			else {
-				replace_data("number", (SEXPT_NUMBER | SEXPT_VALID));
-			}
+			replace_data("number", (SEXPT_NUMBER | SEXPT_VALID));
 			EditLabel(tree_nodes[item_index].handle);
 			return 1; 
 	
 		case ID_REPLACE_STRING:
 			expand_operator(item_index);
-			if (tree_nodes[item_index].type & SEXPT_MODIFIER) {
-				replace_data("string", (SEXPT_STRING | SEXPT_MODIFIER | SEXPT_VALID));
-			}
-			else {
-				replace_data("string", (SEXPT_STRING | SEXPT_VALID));
-			}
+			replace_data("string", (SEXPT_STRING | SEXPT_VALID));
 			EditLabel(tree_nodes[item_index].handle);
 			return 1; 
 
 		case ID_ADD_STRING:	{
 			int theNode;
 			
-			if (tree_nodes[item_index].type & SEXPT_CONTAINER) {
-				theNode = add_data("string", (SEXPT_STRING | SEXPT_MODIFIER | SEXPT_VALID));
-			}
-			else {
-				theNode = add_data("string", (SEXPT_STRING | SEXPT_VALID));
-			}
+			theNode = add_data("string", (SEXPT_STRING | SEXPT_VALID));
 			EditLabel(tree_nodes[theNode].handle);
 			return 1;
 		}
@@ -2244,12 +1966,7 @@ BOOL sexp_tree::OnCommand(WPARAM wParam, LPARAM lParam)
 		case ID_ADD_NUMBER:	{
 			int theNode;
 
-			if (tree_nodes[item_index].type & SEXPT_CONTAINER) {
-				theNode = add_data("number", (SEXPT_NUMBER | SEXPT_MODIFIER | SEXPT_VALID));
-			}
-			else {
-				theNode = add_data("number", (SEXPT_NUMBER | SEXPT_VALID));
-			}
+			theNode = add_data("number", (SEXPT_NUMBER | SEXPT_VALID));
 			EditLabel(tree_nodes[theNode].handle);
 			return 1;
 		}
@@ -2269,7 +1986,7 @@ BOOL sexp_tree::OnCommand(WPARAM wParam, LPARAM lParam)
 			HTREEITEM h_parent;
 
 			if ((m_mode & ST_ROOT_DELETABLE) && (item_index == -1)) {
-				item_index = GetItemData(item_handle);
+				item_index = (int)GetItemData(item_handle);
 				if (m_mode == MODE_GOALS) {
 					Assert(Goal_editor_dlg);
 					theNode = Goal_editor_dlg->handler(ROOT_DELETED, item_index);
@@ -2470,22 +2187,6 @@ void sexp_list_item::destroy()
 	}
 }
 
-void sexp_tree::add_default_modifier(int container_index)
-{
-	sexp_list_item item;
-
-	if (Sexp_containers[container_index].type & SEXP_CONTAINER_MAP) {
-		item.set_data("<any data>");
-	}
-	else if (Sexp_containers[container_index].type & SEXP_CONTAINER_LIST) {
-		item.set_data(Container_modifiers[0].name);
-	}
-
-	item.type = (SEXPT_VALID | SEXPT_STRING | SEXPT_MODIFIER); 
-	add_data(item.text, item.type);
-}
-
-
 int sexp_tree::add_default_operator(int op, int argnum)
 {
 	char buf[256];
@@ -2565,7 +2266,7 @@ int sexp_tree::add_default_operator(int op, int argnum)
 
 int sexp_tree::get_default_value(sexp_list_item *item, char *text_buf, int op, int i)
 {
-	char *str = NULL;
+	const char *str = NULL;
 	int type, index;
 	sexp_list_item *list;
 	HTREEITEM h;
@@ -2573,7 +2274,8 @@ int sexp_tree::get_default_value(sexp_list_item *item, char *text_buf, int op, i
 	h = item_handle;
 	index = item_index;
 	type = query_operator_argument_type(op, i);
-	switch (type) {
+	switch (type)
+	{
 		case OPF_NULL:
 			item->set_op(OP_NOP);
 			return 0;
@@ -2696,26 +2398,29 @@ int sexp_tree::get_default_value(sexp_list_item *item, char *text_buf, int op, i
 				int temp = 0;
 				char sexp_str_token[TOKEN_LENGTH];
 
-				if (i==4) temp = 100;
+				if (i==4)
+					temp = 100;
 
 				sprintf(sexp_str_token, "%d", temp);
 				item->set_data_dup(sexp_str_token, (SEXPT_NUMBER | SEXPT_VALID));
 			}
-			else if ((Operators[op].value == OP_MODIFY_VARIABLE)) {
-				if (get_modify_variable_type(index) == OPF_NUMBER) {
+			else if ((Operators[op].value == OP_MODIFY_VARIABLE))
+			{
+				if (get_modify_variable_type(index) == OPF_NUMBER)
 					item->set_data("0", (SEXPT_NUMBER | SEXPT_VALID));
-				}
-				else {					
+				else
 					item->set_data("<any data>", (SEXPT_STRING | SEXPT_VALID));
-				}
 			}
-			else if ((Operators[op].value == OP_SET_VARIABLE_BY_INDEX)) {
-				if (i == 0) {
+			else if ((Operators[op].value == OP_SET_VARIABLE_BY_INDEX))
+			{
+				if (i == 0)
 					item->set_data("0", (SEXPT_NUMBER | SEXPT_VALID));
-				}
-				else {					
+				else
 					item->set_data("<any data>", (SEXPT_STRING | SEXPT_VALID));
-				}
+			}
+			else if (Operators[op].value == OP_JETTISON_CARGO_NEW)
+			{
+				item->set_data("25", (SEXPT_NUMBER | SEXPT_VALID));
 			}
 			else
 			{
@@ -2785,7 +2490,8 @@ int sexp_tree::get_default_value(sexp_list_item *item, char *text_buf, int op, i
 	}
 
 	// catch anything that doesn't have a default value.  Just describe what should be here instead
-	switch (type) {
+	switch (type)
+	{
 		case OPF_SHIP:
 		case OPF_SHIP_NOT_PLAYER:
 		case OPF_SHIP_POINT:
@@ -2995,7 +2701,6 @@ int sexp_tree::query_default_argument_available(int op, int i)
 		case OPF_NAV_POINT:
 		case OPF_TEAM_COLOR:
 		case OPF_GAME_SND:
-		case OPF_LIST_MODIFIER:
 			return 1;
 
 		case OPF_SHIP:
@@ -3099,32 +2804,10 @@ int sexp_tree::query_default_argument_available(int op, int i)
 			return (sexp_variable_count() > 0) ? 1 : 0;
 
 		case OPF_SSM_CLASS:
-			return (Ssm_info.size() > 0) ? 1 : 0;
+			return Ssm_info.empty() ? 0 : 1;
 
 		case OPF_MISSION_MOOD:
 			return Builtin_moods.empty() ? 0 : 1;
-
-		case OPF_CONTAINER_NAME:
-			return Sexp_containers.empty() ? 0 : 1;
-
-		case OPF_LIST_CONTAINER_NAME:
-			for (int idx = 0; idx < (int)Sexp_containers.size(); idx++) {
-				if (Sexp_containers[idx].type & SEXP_CONTAINER_LIST) {
-					return 1;
-				}
-			}
-			return 0;
-
-		case OPF_MAP_CONTAINER_NAME:
-			for (int idx = 0; idx < (int)Sexp_containers.size(); idx++) {
-				if (Sexp_containers[idx].type & SEXP_CONTAINER_MAP) {
-					return 1;
-				}
-			}
-			return 0;
-
-		case OPF_MAP_KEY:	// without knowing which map we are dealing with, there is no possible way to know if any keys are defined for it
-			return 0; 
 
 		default:
 			Int3();
@@ -3222,24 +2905,6 @@ int sexp_tree::add_variable_data(const char *data, int type)
 	tree_nodes[node].handle = insert(data, BITMAP_VARIABLE, BITMAP_VARIABLE, tree_nodes[item_index].handle);
 	tree_nodes[node].flags = NOT_EDITABLE;
 	*modified = 1;
-	return node;
-}
-
-// add a (variable) data node under operator pointed to by item_index
-int sexp_tree::add_container_data(const char *data, bool add_default) 
-{
-	int node;
-
-	expand_operator(item_index);
-	node = allocate_node(item_index);
-	set_node(node, (SEXPT_CONTAINER | SEXPT_VALID), data);
-	tree_nodes[node].handle = insert(data, BITMAP_CONTAINER, BITMAP_CONTAINER, tree_nodes[item_index].handle);
-	tree_nodes[node].flags = NOT_EDITABLE;
-	item_index = node;
-	*modified = 1;
-	if (add_default) {
-		add_default_modifier(get_index_sexp_container_name(data));
-	}
 	return node;
 }
 
@@ -3502,7 +3167,6 @@ void sexp_tree::link_modified(int *ptr)
 
 void get_variable_default_text_from_variable_text(char *text, char *default_text)
 {
-	int len;
 	char *start;
 
 	// find '('
@@ -3511,7 +3175,7 @@ void get_variable_default_text_from_variable_text(char *text, char *default_text
 	start++;
 
 	// get length and copy all but last char ")"
-	len = strlen(start);
+	auto len = strlen(start);
 	strncpy(default_text, start, len-1);
 
 	// add null termination
@@ -3520,8 +3184,7 @@ void get_variable_default_text_from_variable_text(char *text, char *default_text
 
 void get_variable_name_from_sexp_tree_node_text(const char *text, char *var_name)
 {
-	int length;
-	length = strcspn(text, "(");
+	auto length = strcspn(text, "(");
 
 	strncpy(var_name, text, length);
 	var_name[length] = '\0';
@@ -3571,14 +3234,14 @@ int sexp_tree::get_modify_variable_type(int parent)
 void sexp_tree::verify_and_fix_arguments(int node)
 {
 	int op, arg_num, type, tmp;
-	static int flag = 0;
 	sexp_list_item *list, *ptr;
 	bool is_variable_arg = false; 
 
-	if (flag)
+	static bool was_here = false;
+	if (was_here)
 		return;
 
-	flag++;
+	was_here = true;
 	op = get_operator_index(tree_nodes[node].text);
 	if (op < 0)
 		return;
@@ -3594,16 +3257,6 @@ void sexp_tree::verify_and_fix_arguments(int node)
 		if (type == OPF_AMBIGUOUS) {
 			is_variable_arg = true;
 			type = get_modify_variable_type(node);
-		}
-		if (tree_nodes[item_index].type & SEXPT_CONTAINER) {
-			int container_index = get_index_sexp_container_name(tree_nodes[item_index].text); 
-			Assert (container_index != -1);
-			if (!(Sexp_containers[container_index].type & SEXP_CONTAINER_STRONGLY_TYPED_DATA)) {
-				// if we don't have strongly typed data, we don't care if the data matches
-				item_index = tree_nodes[item_index].next;
-				arg_num++;
-				continue; 
-			}
 		}
 		if (query_restricted_opf_range(type)) {
 			list = get_listing_opf(type, node, arg_num);
@@ -3766,55 +3419,6 @@ void sexp_tree::replace_data(const char *data, int type)
 
 	// check remaining data beyond replaced data for validity (in case any of it is dependent on data just replaced)
 	verify_and_fix_arguments(tree_nodes[item_index].parent);
-
-	*modified = 1;
-	update_help(GetSelectedItem());
-}
-
-
-void sexp_tree::replace_container_data(int container_idx, int type, bool test_child_nodes, bool delete_child_nodes, bool set_default_modifier )
-{
-	int node;
-	HTREEITEM h;
-	
-	h = tree_nodes[item_index].handle;
-
-	// if this is already a container of the right type, don't alter the child nodes
-	if (test_child_nodes && (tree_nodes[item_index].type & SEXPT_CONTAINER)) {
-		if (Sexp_containers[container_idx].type & SEXP_CONTAINER_LIST) {
-			int old_con_index = get_index_sexp_container_name(tree_nodes[item_index].text);
-
-			Assert (old_con_index != -1); 
-			
-			if (Sexp_containers[old_con_index].type & SEXP_CONTAINER_LIST) {
-				// check for strongly typed data here
-				int old_opf = Sexp_containers[old_con_index].opf_type; 
-
-				delete_child_nodes = false; 
-				set_default_modifier = false; 
-			}
-		}
-	}
-
-	if (delete_child_nodes) {
-		node = tree_nodes[item_index].child;
-		if (node != -1)
-			free_node2(node);
-
-		tree_nodes[item_index].child = -1;
-		while (ItemHasChildren(h)) {
-			DeleteItem(GetChildItem(h));
-		}
-	}
-
-	set_node(item_index, type, Sexp_containers[container_idx].container_name.c_str());
-	SetItemImage(h, BITMAP_CONTAINER, BITMAP_CONTAINER);
-	SetItemText(h, Sexp_containers[container_idx].container_name.c_str());
-	tree_nodes[item_index].flags = NOT_EDITABLE;
-
-	if (set_default_modifier ) { 
-		add_default_modifier(container_idx); 
-	}
 
 	*modified = 1;
 	update_help(GetSelectedItem());
@@ -4101,8 +3705,8 @@ void sexp_tree::OnLButtonUp(UINT nFlags, CPoint point)
 
 		if (m_h_drop && m_h_drag != m_h_drop) {
 			Assert(m_h_drag);
-			index1 = GetItemData(m_h_drag);
-			index2 = GetItemData(m_h_drop);
+			index1 = (int)GetItemData(m_h_drag);
+			index2 = (int)GetItemData(m_h_drop);
 			swap_roots(m_h_drag, m_h_drop);
 			if (m_mode == MODE_GOALS) {
 				Assert(Goal_editor_dlg);
@@ -4215,10 +3819,6 @@ void sexp_tree::setup(CEdit *ptr)
 			pimagelist->Add(&bitmap, (COLORREF) 0xFF00FF);
 			bitmap.DeleteObject();
 		}
-
-		bitmap.LoadBitmap(IDB_CONTAINER);
-		pimagelist->Add(&bitmap, (COLORREF) 0xFF00FF);
-		bitmap.DeleteObject();
 
 		SetImageList(pimagelist, TVSIL_NORMAL);
 	}
@@ -4517,28 +4117,6 @@ int sexp_tree::query_restricted_opf_range(int opf)
 	return 1;
 }
 
-/** 
-* Special version of get_listing_opf that deals with Sexp container modifiers
-*/
-sexp_list_item *sexp_tree::modifier_get_listing_opf(int parent_node, int arg_index, int type)
-{
-	Assert(tree_nodes[item_index].parent != -1);
-	int container_index = get_index_sexp_container_name(tree_nodes[tree_nodes[item_index].parent].text); 
-
-	Assert(container_index != -1); 
-
-	if (type == OPF_NULL) {
-		if (Sexp_containers[container_index].type & SEXP_CONTAINER_LIST) {
-			type = OPF_LIST_MODIFIER; 
-		}
-		else if (Sexp_containers[container_index].type & SEXP_CONTAINER_MAP) {
-			type = OPF_MAP_KEY; 
-		}
-	}
-
-	return get_listing_opf(type, parent_node, Replace_count, true);
-}
-
 // generate listing of valid argument values.
 // opf = operator format to generate list for
 // parent_node = the parent node we are generating list for
@@ -4548,7 +4126,7 @@ sexp_list_item *sexp_tree::modifier_get_listing_opf(int parent_node, int arg_ind
 // the special argument item, but only if it's a child of a when-argument (or similar) sexp.
 // Also only do this if the list has at least one item, because otherwise the argument code
 // would have nothing to select from.
-sexp_list_item *sexp_tree::get_listing_opf(int opf, int parent_node, int arg_index, bool modifier)
+sexp_list_item *sexp_tree::get_listing_opf(int opf, int parent_node, int arg_index)
 {
 	sexp_list_item head;
 	sexp_list_item *list = NULL;
@@ -4897,26 +4475,6 @@ sexp_list_item *sexp_tree::get_listing_opf(int opf, int parent_node, int arg_ind
 			list = get_listing_opf_game_snds();
 			break;
 
-		case OPF_CONTAINER_NAME:
-			list = get_listing_opf_sexp_containers(SEXP_CONTAINER_ALL); 
-			break;
-
-		case OPF_LIST_CONTAINER_NAME:
-			list = get_listing_opf_sexp_containers(SEXP_CONTAINER_LIST); 
-			break;
-
-		case OPF_MAP_CONTAINER_NAME:
-			list = get_listing_opf_sexp_containers(SEXP_CONTAINER_MAP); 
-			break;
-
-		case OPF_LIST_MODIFIER:
-			list = get_listing_opf_list_modifiers(modifier);
-			break;
-
-		case OPF_MAP_KEY:
-			list = get_listing_opf_map_keys(parent_node, modifier);
-			break; 
-
 		default:
 			Int3();  // unknown OPF code
 			list = NULL;
@@ -5179,16 +4737,16 @@ sexp_list_item *sexp_tree::get_listing_opf_ship(int parent_node)
 
 			}
 			else if (op == OP_CAP_SUBSYS_CARGO_KNOWN_DELAY) {
-				if ( ((Ship_info[Ships[ptr->instance].ship_info_index].flags & SIF_HUGE_SHIP) &&	// big ship
-					!(Ships[ptr->instance].flags2 & SF2_TOGGLE_SUBSYSTEM_SCANNING) )||				// which is not flagged OR
-					((!(Ship_info[Ships[ptr->instance].ship_info_index].flags & SIF_HUGE_SHIP)) &&  // small ship
-					(Ships[ptr->instance].flags2 & SF2_TOGGLE_SUBSYSTEM_SCANNING) ) ) {				// which is flagged
+				if ( ((Ship_info[Ships[ptr->instance].ship_info_index].is_huge_ship()) &&	// big ship
+					!(Ships[ptr->instance].flags[Ship::Ship_Flags::Toggle_subsystem_scanning]) )||				// which is not flagged OR
+					((!(Ship_info[Ships[ptr->instance].ship_info_index].is_huge_ship())) &&  // small ship
+					(Ships[ptr->instance].flags[Ship::Ship_Flags::Toggle_subsystem_scanning]) ) ) {				// which is flagged
 
 						head.add_data(Ships[ptr->instance].ship_name);
 				}
 			}
 			else {
-				if ( !require_cap_ship || (Ship_info[Ships[ptr->instance].ship_info_index].flags & SIF_HUGE_SHIP) ) {
+				if ( !require_cap_ship || Ship_info[Ships[ptr->instance].ship_info_index].is_huge_ship() ) {
 					head.add_data(Ships[ptr->instance].ship_name);
 				}
 			}
@@ -5349,9 +4907,7 @@ sexp_list_item *sexp_tree::get_listing_opf_subsystem(int parent_node, int arg_in
 			switch(special_subsys){
 			// subsystem cargo
 			case OPS_CAP_CARGO:					
-				if (valid_cap_subsys_cargo_list(subsys->system_info->subobj_name) ) {
-					head.add_data(subsys->system_info->subobj_name);
-				}
+				head.add_data(subsys->system_info->subobj_name);	
 				break;
 
 			// beam fire
@@ -5361,14 +4917,14 @@ sexp_list_item *sexp_tree::get_listing_opf_subsystem(int parent_node, int arg_in
 
 			// awacs level
 			case OPS_AWACS:
-				if (subsys->system_info->flags & MSS_FLAG_AWACS) {
+				if (subsys->system_info->flags[Model::Subsystem_Flags::Awacs]) {
 					head.add_data(subsys->system_info->subobj_name);
 				}
 				break;
 
 			// rotating
 			case OPS_ROTATE:
-				if (subsys->system_info->flags & MSS_FLAG_ROTATES) {
+				if (subsys->system_info->flags[Model::Subsystem_Flags::Rotates]) {
 					head.add_data(subsys->system_info->subobj_name);
 				}
 				break;
@@ -5491,9 +5047,9 @@ sexp_list_item *sexp_tree::get_listing_opf_support_ship_class()
 
 	head.add_data("<species support ship class>");
 
-	for (auto it = Ship_info.cbegin(); it != Ship_info.cend(); ++it)
+    for (auto it = Ship_info.cbegin(); it != Ship_info.cend(); ++it)
 	{
-		if (it->flags & SIF_SUPPORT)
+		if (it->flags[Ship::Info_Flags::Support])
 		{
 			head.add_data(it->name);
 		}
@@ -5775,7 +5331,7 @@ sexp_list_item *sexp_tree::get_listing_opf_who_from()
 	ptr = GET_FIRST(&obj_used_list);
 	while (ptr != END_OF_LIST(&obj_used_list)) {
 		if ((ptr->type == OBJ_SHIP) || (ptr->type == OBJ_START))
-			if (!(Ship_info[Ships[get_ship_from_obj(ptr)].ship_info_index].flags & SIF_NOT_FLYABLE))
+			if (Ship_info[Ships[get_ship_from_obj(ptr)].ship_info_index].is_flyable())
 				head.add_data(Ships[ptr->instance].ship_name);
 
 		ptr = GET_NEXT(ptr);
@@ -6168,7 +5724,7 @@ sexp_list_item *sexp_tree::get_listing_opf_huge_weapon()
 	sexp_list_item head;
 
 	for (i=0; i<Num_weapon_types; i++) {
-		if (Weapon_info[i].wi_flags & WIF_HUGE)
+		if (Weapon_info[i].wi_flags[Weapon::Info_Flags::Huge])
 			head.add_data(Weapon_info[i].name);
 	}
 
@@ -6480,58 +6036,6 @@ sexp_list_item *sexp_tree::get_listing_opf_game_snds()
 	return head.next;
 }
 
-sexp_list_item *sexp_tree::get_listing_opf_sexp_containers(int type)
-{
-	sexp_list_item head;
-
-	for (int i = 0; i < (int)Sexp_containers.size(); i++) {
-		if (Sexp_containers[i].type & type) {
-			head.add_data(Sexp_containers[i].container_name.c_str());
-		}
-		
-	}
-
-	return head.next;
-}
-
-sexp_list_item *sexp_tree::get_listing_opf_list_modifiers(bool modifier)
-{
-	sexp_list_item head;
-
-	for (int i = 0; i < MAX_CONTAINER_MODIFIERS; i++) {
-		if (modifier) {
-			head.add_data(Container_modifiers[i].name, (SEXPT_STRING | SEXPT_MODIFIER | SEXPT_VALID));
-		}
-		else {
-			head.add_data(Container_modifiers[i].name);
-		}
-	}
-
-	return head.next;
-}
-
-sexp_list_item *sexp_tree::get_listing_opf_map_keys(int parent_node, bool modifier)
-{
-	sexp_list_item head;
-
-	Assert(tree_nodes[parent_node].type & SEXPT_CONTAINER); 
-
-	int container_index = get_index_sexp_container_name(tree_nodes[parent_node].text);
-
-	Assert(container_index >= 0); 
-
-	for (SCP_unordered_map<SCP_string, SCP_string>::iterator map_iter = Sexp_containers[container_index].map_data.begin(); map_iter != Sexp_containers[container_index].map_data.end(); ++map_iter) {
-		if (modifier) {
-			head.add_data(map_iter->first.c_str(), (SEXPT_STRING | SEXPT_MODIFIER | SEXPT_VALID));
-		}
-		else {
-			head.add_data(map_iter->first.c_str());
-		}
-	}
-
-	return head.next;
-}
-
 // Deletes sexp_variable from sexp_tree.
 // resets tree to not include given variable, and resets text and type
 void sexp_tree::delete_sexp_tree_variable(const char *var_name)
@@ -6628,7 +6132,7 @@ int sexp_tree::get_tree_name_to_sexp_variable_index(const char *tree_name)
 {
 	char var_name[TOKEN_LENGTH];
 
-	int chars_to_copy = strcspn(tree_name, "(");
+	auto chars_to_copy = strcspn(tree_name, "(");
 	Assert(chars_to_copy < TOKEN_LENGTH - 1);
 
 	// Copy up to '(' and add null termination
@@ -6692,22 +6196,4 @@ int sexp_tree::get_loadout_variable_count(int var_index)
 	}
 	
 	return count; 
-}
-
-int sexp_tree::get_container_count(const char *container_name)
-{
-	uint idx;
-	int count = 0;
-	char compare_name[64];
-
-	// look for compare name
-	for (idx=0; idx<tree_nodes.size(); idx++) {
-		if (tree_nodes[idx].type & SEXPT_CONTAINER) {
-			if ( strstr(tree_nodes[idx].text, container_name) ) {
-				count++;
-			}
-		}
-	}
-
-	return count;
 }

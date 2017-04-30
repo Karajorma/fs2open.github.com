@@ -39,8 +39,9 @@ class ship_subsys;
 #define ADD_USHORT(d) do { static_assert(sizeof(d) == sizeof(std::uint16_t), "Size of unsigned short is not right!"); Assert((packet_size + sizeof(d)) < MAX_PACKET_SIZE); ushort swap = INTEL_SHORT(d); memcpy(data+packet_size, &swap, sizeof(d) ); packet_size += sizeof(d); } while (0)
 #define ADD_INT(d) do { static_assert(sizeof(d) == sizeof(std::int32_t), "Size of int is not right!"); Assert((packet_size + sizeof(d)) < MAX_PACKET_SIZE); int swap = INTEL_INT(d); memcpy(data+packet_size, &swap, sizeof(d) ); packet_size += sizeof(d); } while (0)
 #define ADD_UINT(d) do { static_assert(sizeof(d) == sizeof(std::uint32_t), "Size of unsigned int is not right!"); Assert((packet_size + sizeof(d)) < MAX_PACKET_SIZE); uint swap = INTEL_INT(d); memcpy(data+packet_size, &swap, sizeof(d) ); packet_size += sizeof(d); } while (0)
+#define ADD_ULONG(d) do { static_assert(sizeof(d) == sizeof(std::uint64_t), "Size of unsigned long is not right!"); Assert((packet_size + sizeof(d)) < MAX_PACKET_SIZE); std::uint64_t swap = INTEL_LONG(d); memcpy(data+packet_size, &swap, sizeof(d) ); packet_size += sizeof(d); } while (0)
 #define ADD_FLOAT(d) do { Assert((packet_size + sizeof(d)) < MAX_PACKET_SIZE); float swap = INTEL_FLOAT(&d); memcpy(data+packet_size, &swap, sizeof(d) ); packet_size += sizeof(d); } while (0)
-#define ADD_STRING(s) do { Assert((packet_size + strlen(s) + 4) < MAX_PACKET_SIZE);int len = strlen(s); int len_tmp = INTEL_INT(len); ADD_DATA(len_tmp); memcpy(data+packet_size, s, len ); packet_size += len; } while(0)
+#define ADD_STRING(s) do { Assert((packet_size + strlen(s) + 4) < MAX_PACKET_SIZE);int len = (int)strlen(s); int len_tmp = INTEL_INT(len); ADD_DATA(len_tmp); memcpy(data+packet_size, s, len ); packet_size += len; } while(0)
 #define ADD_ORIENT(d) { Assert((packet_size + 17) < MAX_PACKET_SIZE); ubyte dt[17]; multi_pack_orient_matrix(dt,&d); memcpy(data+packet_size,dt,17); packet_size += 17; }
 #define ADD_VECTOR(d) do { vec3d tmpvec = ZERO_VECTOR; tmpvec.xyz.x = INTEL_FLOAT(&d.xyz.x); tmpvec.xyz.y = INTEL_FLOAT(&d.xyz.y); tmpvec.xyz.z = INTEL_FLOAT(&d.xyz.z); ADD_DATA(tmpvec); } while(0)
 
@@ -49,6 +50,7 @@ class ship_subsys;
 #define GET_USHORT(d) do { ushort swap; memcpy(&swap, data+offset, sizeof(d) ); d = INTEL_SHORT(swap); offset += sizeof(d); } while(0)
 #define GET_INT(d) do { int swap; memcpy(&swap, data+offset, sizeof(d) ); d = INTEL_INT(swap); offset += sizeof(d); } while(0)
 #define GET_UINT(d) do { uint swap; memcpy(&swap, data+offset, sizeof(d) ); d = INTEL_INT(swap); offset += sizeof(d); } while(0)
+#define GET_ULONG(d) do { ulong swap; memcpy(&swap, data+offset, sizeof(d) ); d = INTEL_LONG(swap); offset += sizeof(d); } while(0)
 #define GET_FLOAT(d) do { float swap; memcpy(&swap, data+offset, sizeof(d) ); d = INTEL_FLOAT(&swap); offset += sizeof(d); } while(0)
 #define GET_STRING(s) do { int len;  memcpy(&len, data+offset, sizeof(len)); len = INTEL_INT(len); offset += sizeof(len); memcpy(s, data+offset, len); offset += len; s[len] = '\0'; } while(0)
 #define GET_ORIENT(d) { ubyte dt[17]; memcpy(dt,data+offset,17); offset+=17; multi_unpack_orient_matrix(dt,&d); }
@@ -298,7 +300,7 @@ void send_ship_depart_packet( object *objp, int method = -1 );
 void send_mission_log_packet( int entry );
 
 // send a mission message packet
-void send_mission_message_packet(int id, char *who_from, int priority, int timing, int source, int builtin_type, int multi_target, int multi_team_filter, int delay = 0);
+void send_mission_message_packet(int id, const char *who_from, int priority, int timing, int source, int builtin_type, int multi_target, int multi_team_filter, int delay = 0);
 
 // broadcast a query for active games. TCP will either request from the MT or from the specified list
 void broadcast_game_query();
@@ -434,7 +436,7 @@ void send_shield_explosion_packet(int objnum, int tri_num, vec3d hit_pos);
 
 void send_player_stats_block_packet(net_player *pl, int stats_type, net_player *target = NULL, short offset = 0);
 
-void send_host_restr_packet(char *callsign, int code, int mode);
+void send_host_restr_packet(const char *callsign, int code, int mode);
 
 void send_netgame_end_error_packet(int notify_code, int err_code);
 
@@ -474,18 +476,6 @@ void process_emp_effect(ubyte *data, header *hinfo);
 void send_reinforcement_avail( int rnum );
 void process_reinforcement_avail( ubyte *data, header *hinfo );
 
-// change iff stuff
-void send_change_iff_packet(ushort net_signature, int new_team);
-void process_change_iff_packet( ubyte *data, header *hinfo );
-
-// change iff color stuff
-void send_change_iff_color_packet(ushort net_signature, int observer_team, int observed_team, int alternate_iff_color);
-void process_change_iff_color_packet( ubyte *data, header *hinfo );
-
-// change ai class stuff
-void send_change_ai_class_packet(ushort net_signature, char *subsystem, int new_ai_class);
-void process_change_ai_class_packet( ubyte *data, header *hinfo );
-
 // new primary fired info
 void send_NEW_primary_fired_packet(ship *shipp, int banks_fired);
 void process_NEW_primary_fired_packet(ubyte *data, header *hinfo);
@@ -509,10 +499,6 @@ void process_event_update_packet(ubyte *data, header *hinfo);
 // variable update packet
 void send_variable_update_packet(int variable_index, char *value);
 void process_variable_update_packet( ubyte *data, header *hinfo);
-
-// weapons or ammo changed packet
-void send_weapon_or_ammo_changed_packet (int ship_index, int bank_type, int bank_number, int ammo_left, int rearm_limit, int new_weapon_index);
-void process_weapon_or_ammo_changed_packet( ubyte *data, header *hinfo);
 
 // weapon detonate packet
 void send_weapon_detonate_packet(object *objp);

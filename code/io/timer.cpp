@@ -1,11 +1,11 @@
 /*
  * Copyright (C) Volition, Inc. 1999.  All rights reserved.
  *
- * All source code herein is the property of Volition, Inc. You may not sell 
- * or otherwise commercially exploit the source or things you created based on the 
+ * All source code herein is the property of Volition, Inc. You may not sell
+ * or otherwise commercially exploit the source or things you created based on the
  * source.
  *
-*/ 
+*/
 
 
 
@@ -20,11 +20,25 @@
 #include <limits.h>
 
 static Uint64 Timer_perf_counter_freq = 0;	// perf counter frequency - number of ticks per second
+static Uint64 Timer_base_value;
 
 static int Timer_inited = 0;
 
 
 #define MICROSECONDS_PER_SECOND 1000000
+#define NANOSECONDS_PER_SECOND 1000000000
+
+static long double Timer_to_microseconds;
+static long double Timer_to_nanoseconds;
+
+static uint64_t get_performance_counter()
+{
+	Assertion(Timer_inited, "This function can only be used when the timer system is initialized!");
+
+	auto counter = SDL_GetPerformanceCounter();
+
+	return counter - Timer_base_value;
+}
 
 void timer_close()
 {
@@ -37,16 +51,13 @@ void timer_init()
 {
 	if ( !Timer_inited )	{
 		Timer_perf_counter_freq = SDL_GetPerformanceFrequency();
-
+		Timer_base_value = SDL_GetPerformanceCounter();
+		Timer_to_nanoseconds = (long double) NANOSECONDS_PER_SECOND / (long double) Timer_perf_counter_freq;
+		Timer_to_microseconds = (long double) MICROSECONDS_PER_SECOND / (long double) Timer_perf_counter_freq;
 		Timer_inited = 1;
 
 		atexit(timer_close);
 	}
-}
-
-static uint timer_get()
-{
-	return SDL_GetTicks();
 }
 
 fix timer_get_fixed_seconds()
@@ -56,16 +67,10 @@ fix timer_get_fixed_seconds()
 		return 0;
 	}
 
-	longlong a = timer_get();
+	auto time = timer_get_microseconds();
+	time *= 65536;
 
-	a *= 65536;
-
-	return (fix)(a / 1000);
-}
-
-fix timer_get_fixed_secondsX()
-{
-	return timer_get_fixed_seconds();
+	return (fix)(time / MICROSECONDS_PER_SECOND);
 }
 
 fix timer_get_approx_seconds()
@@ -80,7 +85,7 @@ int timer_get_seconds()
 		return 0;
 	}
 
-	return (timer_get() / 1000);
+	return (int) (timer_get_microseconds() / MICROSECONDS_PER_SECOND);
 }
 
 int timer_get_milliseconds()
@@ -90,35 +95,27 @@ int timer_get_milliseconds()
 		return 0;
 	}
 
-	return timer_get();
+	return (int) (timer_get_microseconds() / 1000);
 }
 
-int timer_get_microseconds()
+std::uint64_t timer_get_microseconds()
 {
-	if (!Timer_inited) {
-		Int3();					// Make sure you call timer_init before anything that uses timer functions!
-		return 0;
-	}
+	auto time = get_performance_counter();
 
-	return timer_get() * 1000;
+	return (uint64_t) (time * Timer_to_microseconds);
 }
 
-std::uint64_t timer_get_high_res_microseconds()
+std::uint64_t timer_get_nanoseconds()
 {
-	if ( !Timer_inited ) {
-		Int3();
-		return 0;
-	}
+	auto time = get_performance_counter();
 
-	Uint64 elapsed = SDL_GetPerformanceCounter();
-
-	return elapsed * MICROSECONDS_PER_SECOND / Timer_perf_counter_freq;
+    return (uint64_t) (time * Timer_to_nanoseconds);
 }
 
 // 0 means invalid,
 // 1 means always return true
 // 2 and above actually check the time
-int timestamp_ticker = 2;
+std::uint64_t timestamp_ticker = 2;
 
 void timestamp_reset()
 {
@@ -127,15 +124,27 @@ void timestamp_reset()
 
 // Restrict all time values between 0 and MAX_TIME
 // so we don't have to use UINTs to calculate rollover.
-// For debugging & testing, you could set this to 
+// For debugging & testing, you could set this to
 // something like 1 minute (6000).
-#define MAX_TIME (INT_MAX/2)
+const std::uint32_t MAX_TIME = INT_MAX / 2;
 
-void timestamp_inc(int frametime_ms)
+static int timestamp_ms() {
+	if (timestamp_ticker <= 2) {
+		// These are special values, don't adjust them
+		return (int)timestamp_ticker;
+	}
+	return (int)(timestamp_ticker / 1000);
+}
+
+void timestamp_inc(fix frametime)
 {
-	timestamp_ticker += frametime_ms;
+	// Compute the microseconds, assumes that a fix uses the lower 16 bit for storing the fractional part
+	auto delta = (std::uint64_t)frametime;
+	delta = delta * (MICROSECONDS_PER_SECOND / 65536);
 
-	if ( timestamp_ticker > MAX_TIME )	{
+	timestamp_ticker += delta;
+
+	if ( timestamp_ms() > (int)MAX_TIME )	{
 		timestamp_ticker = 2;		// Roll!
 	}
 
@@ -145,15 +154,14 @@ void timestamp_inc(int frametime_ms)
 	}
 }
 
-int timestamp(int delta_ms )
-{
+int timestamp(int delta_ms ) {
 	int t2;
 	if (delta_ms < 0 ) return 0;
 	if (delta_ms == 0 ) return 1;
-	t2 = timestamp_ticker + delta_ms;
-	if ( t2 > MAX_TIME )	{
+	t2 = timestamp_ms() + delta_ms;
+	if ( t2 > (int)MAX_TIME )	{
 		// wrap!!!
-		t2 = delta_ms - (MAX_TIME-timestamp_ticker);
+		t2 = delta_ms - (MAX_TIME-timestamp_ms());
 	}
 	if (t2 < 2 ) t2 = 2;	// hack??
 	return t2;
@@ -161,19 +169,18 @@ int timestamp(int delta_ms )
 
 //	Returns milliseconds until timestamp will elapse.
 //	Negative value gives milliseconds ago that timestamp elapsed.
-int timestamp_until(int stamp)
-{
+int timestamp_until(int stamp) {
 	// JAS: FIX
 	// HACK!! This doesn't handle rollover!
 	// (Will it ever happen?)
-	
-	return stamp - timestamp_ticker;
+
+	return stamp - timestamp_ms();
 
 /*
 	uint	delta;
 
 	delta = stamp - timestamp_ticker;
-	
+
 
 	if (delta > UINT_MAX/2)
 		delta = UINT_MAX - delta + 1;
@@ -186,22 +193,37 @@ int timestamp_until(int stamp)
 
 // alternate timestamp functions.  The way these work is you call xtimestamp() to get the
 // current counter value, and then call
-int timestamp()
-{
-	return timestamp_ticker;
+int timestamp() {
+	return timestamp_ms();
 }
 
-int timestamp_has_time_elapsed(int stamp, int time)
-{
+int timestamp_has_time_elapsed(int stamp, int time) {
 	int t;
 
 	if (time <= 0)
 		return 1;
 
 	t = stamp + time;
-	if (t <= timestamp_ticker)
+	if (t <= timestamp_ms())
 		return 1;  // if we are unlucky enough to have it wrap on us, this will assume time has elapsed.
 
 	return 0;
+}
+bool timestamp_elapsed(int stamp) {
+	if (stamp == 0) {
+		return false;
+	}
+
+	return timestamp_ms() >= stamp;
+}
+bool timestamp_elapsed_safe(int a, int b) {
+	if (a == 0) {
+		return true;
+	}
+
+	return timestamp_ms() >= a || timestamp_ms() < (a - b + 100);
+}
+void timestamp_set_value(int value) {
+	timestamp_ticker = (std::uint64_t) value * 1000;
 }
 

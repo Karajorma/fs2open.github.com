@@ -19,9 +19,7 @@
 #include "cmdline/cmdline.h"
 #include "osapi/osapi.h"
 
-
-#include <SDL_assert.h>
-
+#include <fstream>
 #include <algorithm>
 
 namespace
@@ -33,6 +31,10 @@ namespace
 
 	bool checkedLegacyMode = false;
 	bool legacyMode = false;
+
+	SCP_vector<std::unique_ptr<os::Viewport>> viewports;
+	os::Viewport* mainViewPort = nullptr;
+	SDL_Window* mainSDLWindow = nullptr;
 
 	const char* getPreferencesPath()
 	{
@@ -57,7 +59,8 @@ namespace
 	bool fAppActive = false;
 	bool window_event_handler(const SDL_Event& e)
 	{
-		if (os::events::isWindowEvent(e, os_get_window())) {
+		Assertion(mainSDLWindow != nullptr, "This function may only be called with a valid SDL Window.");
+		if (os::events::isWindowEvent(e, mainSDLWindow)) {
 			switch (e.window.event) {
 			case SDL_WINDOWEVENT_MINIMIZED:
 			case SDL_WINDOWEVENT_FOCUS_LOST:
@@ -113,21 +116,6 @@ namespace
 // Windows specific includes
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
-
-// For FRED
-void os_set_window_from_hwnd(HWND handle)
-{
-	if (SDL_InitSubSystem(SDL_INIT_VIDEO) < 0) {
-		Error(LOCATION, "Couldn't init SDL video: %s", SDL_GetError());
-	}
-
-	if (SDL_GL_LoadLibrary(NULL) < 0)
-		Error(LOCATION, "Failed to load OpenGL library: %s!", SDL_GetError());
-
-	SDL_Window* window = SDL_CreateWindowFrom((void*) handle);
-
-	os_set_window(window);
-}
 
 // go through all windows and try and find the one that matches the search string
 BOOL __stdcall os_enum_windows( HWND hwnd, LPARAM param )
@@ -208,14 +196,10 @@ void os_set_process_affinity()
 // OSAPI DEFINES/VARS
 //
 
-static SDL_Window* main_window = NULL;
-
 // os-wide globals
 static char			szWinTitle[128];
 static char			szWinClass[128];
 static int			Os_inited = 0;
-
-static SDL_mutex* Os_lock;
 
 static SCP_vector<SDL_Event> buffered_events;
 
@@ -224,8 +208,6 @@ int Os_debugger_running = 0;
 // ----------------------------------------------------------------------------------------------------
 // OSAPI FORWARD DECLARATIONS
 //
-
-// called at shutdown. Makes sure all thread processing terminates.
 void os_deinit();
 
 // ----------------------------------------------------------------------------------------------------
@@ -242,8 +224,6 @@ void os_init(const char * wclass, const char * title, const char *app_name, cons
 
 	strcpy_s( szWinTitle, title );
 	strcpy_s( szWinClass, wclass );
-
-	Os_lock = SDL_CreateMutex();
 
 	mprintf(("  Initializing SDL...\n"));
 
@@ -276,27 +256,25 @@ void os_init(const char * wclass, const char * title, const char *app_name, cons
 
 	os::events::addEventListener(SDL_WINDOWEVENT, os::events::DEFAULT_LISTENER_WEIGHT, window_event_handler);
 	os::events::addEventListener(SDL_QUIT, os::events::DEFAULT_LISTENER_WEIGHT, quit_handler);
-
-	atexit(os_deinit);
 }
 
 // set the main window title
 void os_set_title( const char * title )
 {
+	Assertion(mainSDLWindow != nullptr, "This function may only be called with a valid SDL Window.");
 	strcpy_s( szWinTitle, title );
 
-	SDL_SetWindowTitle(main_window, szWinTitle);
+	SDL_SetWindowTitle(mainSDLWindow, szWinTitle);
 }
 
-extern void gr_opengl_shutdown();
 // call at program end
 void os_cleanup()
 {
-	gr_opengl_shutdown();
-
 #ifndef NDEBUG
 	outwnd_close();
 #endif
+
+	os_deinit();
 }
 
 // window management -----------------------------------------------------------------
@@ -305,19 +283,6 @@ void os_cleanup()
 int os_foreground()
 {
 	return fAppActive;
-}
-
-// Returns the handle to the main window
-SDL_Window* os_get_window()
-{
-	return main_window;
-}
-
-// Returns the handle to the main window
-void os_set_window(SDL_Window* new_handle)
-{
-	main_window = new_handle;
-	fAppActive = true;
 }
 
 // process management -----------------------------------------------------------------
@@ -337,16 +302,9 @@ void os_sleep(uint ms)
 #endif
 }
 
-// Used to stop message processing
-void os_suspend()
-{
-	SDL_LockMutex( Os_lock );
-}
-
-// resume message processing
-void os_resume()
-{
-	SDL_UnlockMutex( Os_lock );
+static bool file_exists(const SCP_string& path) {
+	std::ofstream str(path, std::ios::in);
+	return str.good();
 }
 
 bool os_is_legacy_mode()
@@ -363,19 +321,31 @@ bool os_is_legacy_mode()
 		checkedLegacyMode = true;
 	}
 	else {
+		bool old_config_exists = false;
+		bool new_config_exists = false;
+
 		SCP_stringstream path_stream;
 		path_stream << getPreferencesPath() << DIR_SEPARATOR_CHAR << Osreg_config_file_name;
 
-		// Use the existance of the fs2_open.ini file for determining if the launcher supports the new mode
-		auto file = fopen(path_stream.str().c_str(), "r");
+		new_config_exists = file_exists(path_stream.str());
+#ifdef SCP_UNIX
+        path_stream.str("");
+		path_stream << Cfile_user_dir_legacy << DIR_SEPARATOR_CHAR << Osreg_config_file_name;
 
-		if (file == nullptr)
-		{
+		old_config_exists = file_exists(path_stream.str());
+#else
+		// At this point we can't determine if the old config exists so just assume that it does
+		old_config_exists = true;
+#endif
+
+		if (new_config_exists) {
+			// If the new config exists then we never use the lagacy mode
+			legacyMode = false;
+		} else if (old_config_exists) {
+			// Old config exists but new doesn't -> use legacy mode
 			legacyMode = true;
-		}
-		else
-		{
-			fclose(file);
+		} else {
+			// Neither old nor new config exists -> this is a new install
 			legacyMode = false;
 		}
 	}
@@ -383,7 +353,7 @@ bool os_is_legacy_mode()
 	if (legacyMode) {
 		// Print a message for the people running it from the terminal
 		fprintf(stdout, "FSO is running in legacy config mode. Please either update your launcher or"
-			" copy the configuration and pilot files to '%s' for better future compatibility.", getPreferencesPath());
+			" copy the configuration and pilot files to '%s' for better future compatibility.\n", getPreferencesPath());
 	}
 
 	checkedLegacyMode = true;
@@ -397,17 +367,18 @@ bool os_is_legacy_mode()
 // called at shutdown. Makes sure all thread processing terminates.
 void os_deinit()
 {
+	// Free the view ports 
+	viewports.clear();
+
 	if (preferencesPath) {
 		SDL_free(preferencesPath);
 		preferencesPath = nullptr;
 	}
 
-	SDL_DestroyMutex(Os_lock);
-
 	SDL_Quit();
 }
 
-void debug_int3(char *file, int line)
+void debug_int3(const char *file, int line)
 {
 	mprintf(("Int3(): From %s at line %d\n", file, line));
 
@@ -429,6 +400,22 @@ void debug_int3(char *file, int line)
 
 namespace os
 {
+	Viewport* addViewport(std::unique_ptr<Viewport>&& viewport) {
+		auto port = viewport.get();
+		viewports.push_back(std::move(viewport));
+		return port;
+	}
+	void setMainViewPort(Viewport* mainView) {
+		mainViewPort = mainView;
+		mainSDLWindow = mainView->toSDLWindow();
+	}
+	SDL_Window* getSDLMainWindow() {
+		return mainSDLWindow;
+	}
+	Viewport* getMainViewport() {
+		return mainViewPort;
+	}
+
 	namespace events
 	{
 		namespace

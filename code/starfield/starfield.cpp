@@ -14,6 +14,7 @@
 #include "cmdline/cmdline.h"
 #include "debugconsole/console.h"
 #include "freespace.h"
+#include "graphics/paths/PathRenderer.h"
 #include "hud/hud.h"
 #include "hud/hudtarget.h"
 #include "io/timer.h"
@@ -27,6 +28,7 @@
 #include "starfield/nebula.h"
 #include "starfield/starfield.h"
 #include "starfield/supernova.h"
+#include "tracing/tracing.h"
 
 #define MAX_DEBRIS_VCLIPS			4
 #define DEBRIS_ROT_MIN				10000
@@ -174,6 +176,10 @@ int Num_debris_nebula = 0;
 
 bool Dynamic_environment = false;
 bool Motion_debris_override = false;
+
+static int Default_env_map = -1;
+static int Mission_env_map = -1;
+static bool Env_cubemap_drawn = false;
 
 void stars_release_debris_vclips(debris_vclip *vclips)
 {
@@ -700,6 +706,10 @@ void stars_init()
 	parse_startbl("stars.tbl");
 
 	parse_modular_table("*-str.tbm", parse_startbl);
+
+	if (Cmdline_env) {
+		ENVMAP = Default_env_map = bm_load("cubemap");
+	}
 }
 
 // call only from game_shutdown()!!
@@ -776,6 +786,41 @@ void stars_pre_level_init(bool clear_backgrounds)
 
 	Dynamic_environment = false;
 	Motion_debris_override = false;
+
+	Env_cubemap_drawn = false;
+}
+
+// setup the render target ready for this mission's environment map
+static void environment_map_gen()
+{
+	const int size = 512;
+	int gen_flags = (BMP_FLAG_RENDER_TARGET_STATIC | BMP_FLAG_CUBEMAP | BMP_FLAG_RENDER_TARGET_MIPMAP);
+
+	if ( !Cmdline_env ) {
+		return;
+	}
+
+	if (gr_screen.envmap_render_target >= 0) {
+		if ( !bm_release(gr_screen.envmap_render_target, 1) ) {
+			Warning(LOCATION, "Unable to release environment map render target.");
+		}
+
+		gr_screen.envmap_render_target = -1;
+	}
+
+	if ( Dynamic_environment || (The_mission.flags[Mission::Mission_Flags::Subspace]) ) {
+		Dynamic_environment = true;
+		gen_flags &= ~BMP_FLAG_RENDER_TARGET_STATIC;
+		gen_flags |= BMP_FLAG_RENDER_TARGET_DYNAMIC;
+	}
+		// bail if we are going to be static, and have an envmap specified already
+	else if ( strlen(The_mission.envmap_name) ) {
+		// Load the mission map so we can use it later
+		Mission_env_map = bm_load(The_mission.envmap_name);
+		return;
+	}
+
+	gr_screen.envmap_render_target = bm_make_render_target(size, size, gen_flags);
 }
 
 // call this in game_post_level_init() so we know whether we're running in full nebula mode or not
@@ -790,7 +835,7 @@ void stars_post_level_init()
 	stars_set_background_model(The_mission.skybox_model, NULL, The_mission.skybox_flags);
 	stars_set_background_orientation(&The_mission.skybox_orientation);
 
-	stars_load_debris( ((The_mission.flags & MISSION_FLAG_FULLNEB) || Nebula_sexp_used) );
+	stars_load_debris( ((The_mission.flags[Mission::Mission_Flags::Fullneb]) || Nebula_sexp_used) );
 
 // following code randomly distributes star points within a sphere volume, which
 // avoids there being denser areas along the edges and in corners that we had in the
@@ -851,6 +896,23 @@ void stars_post_level_init()
 	}
 
 	starfield_generate_bitmap_buffers();
+
+	environment_map_gen();
+}
+
+void stars_level_close() {
+	if (gr_screen.envmap_render_target >= 0) {
+		if ( bm_release(gr_screen.envmap_render_target, 1) ) {
+			gr_screen.envmap_render_target = -1;
+		}
+	}
+
+	if (Mission_env_map >= 0) {
+		bm_release(Mission_env_map);
+		Mission_env_map = -1;
+	}
+
+	ENVMAP = Default_env_map;
 }
 
 
@@ -1037,6 +1099,9 @@ void stars_get_sun_pos(int sun_n, vec3d *pos)
 // draw sun
 void stars_draw_sun(int show_sun)
 {	
+	GR_DEBUG_SCOPE("Draw Suns");
+	TRACE_SCOPE(tracing::DrawSuns);
+
 	int idx;
 	vec3d sun_pos;
 	vec3d sun_dir;
@@ -1087,16 +1152,36 @@ void stars_draw_sun(int show_sun)
 			local_scale = 1.0f;
 
 		// draw the sun itself, keep track of how many we drew
+		int bitmap_id = -1;
 		if (bm->fps) {
-			gr_set_bitmap(bm->bitmap_id + ((timestamp() / (int)(bm->fps)) % bm->n_frames), GR_ALPHABLEND_FILTER, GR_BITBLT_MODE_NORMAL, 0.999f);
+			//gr_set_bitmap(bm->bitmap_id + ((timestamp() / (int)(bm->fps)) % bm->n_frames), GR_ALPHABLEND_FILTER, GR_BITBLT_MODE_NORMAL, 0.999f);
+			bitmap_id = bm->bitmap_id + ((timestamp() / (int)(bm->fps)) % bm->n_frames);
 		} else {
-			gr_set_bitmap(bm->bitmap_id, GR_ALPHABLEND_FILTER, GR_BITBLT_MODE_NORMAL, 0.999f);
+			//gr_set_bitmap(bm->bitmap_id, GR_ALPHABLEND_FILTER, GR_BITBLT_MODE_NORMAL, 0.999f);
+			bitmap_id = bm->bitmap_id;
 		}
 
 		g3_rotate_faraway_vertex(&sun_vex, &sun_pos);
 
-		if ( !g3_draw_bitmap(&sun_vex, 0, 0.05f * Suns[idx].scale_x * local_scale, TMAP_FLAG_TEXTURED) )
-			Sun_drew++;
+		if ( sun_vex.codes & (CC_BEHIND|CC_OFF_USER) ) {
+			continue;
+		}
+
+		if ( !(sun_vex.flags & PF_PROJECTED) ) {
+			g3_project_vertex(&sun_vex);
+		}
+
+		if ( sun_vex.flags & PF_OVERFLOW ) {
+			continue;
+		}
+
+		material mat_params;
+		material_set_unlit(&mat_params, bitmap_id, 0.999f, true, false);
+		g3_render_rect_screen_aligned_2d(&mat_params, &sun_vex, 0, 0.05f * Suns[idx].scale_x * local_scale);
+		Sun_drew++;
+
+// 		if ( !g3_draw_bitmap(&sun_vex, 0, 0.05f * Suns[idx].scale_x * local_scale, TMAP_FLAG_TEXTURED) )
+// 			Sun_drew++;
 	}
 }
 
@@ -1136,15 +1221,17 @@ void stars_draw_lens_flare(vertex *sun_vex, int sun_n)
 		if (bm->flare_bitmaps[j].bitmap_id < 0)
 			continue;
 
-		gr_set_bitmap(bm->flare_bitmaps[j].bitmap_id, GR_ALPHABLEND_FILTER, GR_BITBLT_MODE_NORMAL, 0.999f);
+		//gr_set_bitmap(bm->flare_bitmaps[j].bitmap_id, GR_ALPHABLEND_FILTER, GR_BITBLT_MODE_NORMAL, 0.999f);
 
 		for (i = 0; i < bm->n_flares; i++) {
 			// draw sorted by texture, to minimize texture changes. not the most efficient way, but better than non-sorted
 			if (bm->flare_infos[i].tex_num == j) {
-//				gr_set_bitmap(bm->flare_bitmaps[bm->flare_infos[i].tex_num], GR_ALPHABLEND_FILTER, GR_BITBLT_MODE_NORMAL, 0.999f);
 				flare_vex.screen.xyw.x = sun_vex->screen.xyw.x + dx * bm->flare_infos[i].pos;
 				flare_vex.screen.xyw.y = sun_vex->screen.xyw.y + dy * bm->flare_infos[i].pos;
-				g3_draw_bitmap(&flare_vex, 0, 0.05f * bm->flare_infos[i].scale, TMAP_FLAG_TEXTURED);
+				//g3_draw_bitmap(&flare_vex, 0, 0.05f * bm->flare_infos[i].scale, TMAP_FLAG_TEXTURED);
+				material mat_params;
+				material_set_unlit(&mat_params, bm->flare_bitmaps[j].bitmap_id, 0.999f, true, false);
+				g3_render_rect_screen_aligned_2d(&mat_params, &flare_vex, 0, 0.05f * bm->flare_infos[i].scale);
 			}
 		}
 	}
@@ -1194,15 +1281,21 @@ void stars_draw_sun_glow(int sun_n)
 		local_scale = 1.0f;
 
 	// draw the sun itself, keep track of how many we drew
+	int bitmap_id = -1;
 	if (bm->glow_fps) {
-		gr_set_bitmap(bm->glow_bitmap + ((timestamp() / (int)(bm->glow_fps)) % bm->glow_n_frames), GR_ALPHABLEND_FILTER, GR_BITBLT_MODE_NORMAL, 0.5f);
+		//gr_set_bitmap(bm->glow_bitmap + ((timestamp() / (int)(bm->glow_fps)) % bm->glow_n_frames), GR_ALPHABLEND_FILTER, GR_BITBLT_MODE_NORMAL, 0.5f);
+		bitmap_id = bm->glow_bitmap + ((timestamp() / (int)(bm->glow_fps)) % bm->glow_n_frames);
 	} else {
-		gr_set_bitmap(bm->glow_bitmap, GR_ALPHABLEND_FILTER, GR_BITBLT_MODE_NORMAL, 0.5f);
+		//gr_set_bitmap(bm->glow_bitmap, GR_ALPHABLEND_FILTER, GR_BITBLT_MODE_NORMAL, 0.5f);
+		bitmap_id = bm->glow_bitmap;
 	}
 
 	g3_rotate_faraway_vertex(&sun_vex, &sun_pos);
-	int zbuff = gr_zbuffer_set(GR_ZBUFF_NONE);
-	g3_draw_bitmap(&sun_vex, 0, 0.10f * Suns[sun_n].scale_x * local_scale, TMAP_FLAG_TEXTURED);
+	//int zbuff = gr_zbuffer_set(GR_ZBUFF_NONE);
+	//g3_draw_bitmap(&sun_vex, 0, 0.10f * Suns[sun_n].scale_x * local_scale, TMAP_FLAG_TEXTURED);
+	material mat_params;
+	material_set_unlit(&mat_params, bitmap_id, 0.5f, true, false);
+	g3_render_rect_screen_aligned_2d(&mat_params, &sun_vex, 0, 0.10f * Suns[sun_n].scale_x * local_scale);
 
 	if (bm->flare) {
 		vec3d light_dir;
@@ -1214,13 +1307,14 @@ void stars_draw_sun_glow(int sun_n)
 			stars_draw_lens_flare(&sun_vex, sun_n);
 	}
 
-	gr_zbuffer_set(zbuff);
+	//gr_zbuffer_set(zbuff);
 }
 
-
-// draw bitmaps
 void stars_draw_bitmaps(int show_bitmaps)
 {
+	GR_DEBUG_SCOPE("Draw Bitmaps");
+	TRACE_SCOPE(tracing::DrawBitmaps);
+
 	int idx;
 	int star_index;
 
@@ -1229,7 +1323,7 @@ void stars_draw_bitmaps(int show_bitmaps)
 		return;
 
 	// if we're in the nebula, don't render any backgrounds
-	if (The_mission.flags & MISSION_FLAG_FULLNEB)
+	if (The_mission.flags[Mission::Mission_Flags::Fullneb])
 		return;
 
 	// detail settings
@@ -1237,13 +1331,6 @@ void stars_draw_bitmaps(int show_bitmaps)
 		return;
 
 	gr_start_instance_matrix(&Eye_position, &vmd_identity_matrix);
-
-	// turn off culling
-	int cull = gr_set_cull(0);
-
-	// turn off zbuffering
-	int saved_zbuffer_mode = gr_zbuffer_get();
-	gr_zbuffer_set(GR_ZBUFF_NONE);
 
 	int sb_instances = (int)Starfield_bitmap_instances.size();
 
@@ -1260,33 +1347,33 @@ void stars_draw_bitmaps(int show_bitmaps)
 			continue;
 		}
 
-		int tmap_flags = TMAP_FLAG_TEXTURED | TMAP_FLAG_CORRECT | TMAP_FLAG_TRILIST | TMAP_HTL_3D_UNLIT;
+		int bitmap_id;
+		bool blending = false;
+		float alpha = 1.0f;
 
 		if (Starfield_bitmaps[star_index].xparent) {
 			if (Starfield_bitmaps[star_index].fps) {
-				gr_set_bitmap(Starfield_bitmaps[star_index].bitmap_id + ((timestamp() / (int)(Starfield_bitmaps[star_index].fps)) % Starfield_bitmaps[star_index].n_frames));		
+				bitmap_id = Starfield_bitmaps[star_index].bitmap_id + ((timestamp() / (int)(Starfield_bitmaps[star_index].fps)) % Starfield_bitmaps[star_index].n_frames);
 			} else {
-				gr_set_bitmap(Starfield_bitmaps[star_index].bitmap_id);
+				bitmap_id = Starfield_bitmaps[star_index].bitmap_id;
 			}
-
-			tmap_flags |= TMAP_FLAG_XPARENT;
 		} else {
 			if (Starfield_bitmaps[star_index].fps) {
-				gr_set_bitmap(Starfield_bitmaps[star_index].bitmap_id + ((timestamp() / (int)(Starfield_bitmaps[star_index].fps)) % Starfield_bitmaps[star_index].n_frames), GR_ALPHABLEND_FILTER, GR_BITBLT_MODE_NORMAL, 0.9999f);	
+				bitmap_id = Starfield_bitmaps[star_index].bitmap_id + ((timestamp() / (int)(Starfield_bitmaps[star_index].fps)) % Starfield_bitmaps[star_index].n_frames);
+				blending = true;
+				alpha = 0.9999f;
 			} else {
-				gr_set_bitmap(Starfield_bitmaps[star_index].bitmap_id, GR_ALPHABLEND_FILTER, GR_BITBLT_MODE_NORMAL, 0.9999f);	
+				bitmap_id = Starfield_bitmaps[star_index].bitmap_id;	
+				blending = true;
+				alpha = 0.9999f;
 			}
 		}
 
-		gr_render(Starfield_bitmap_instances[idx].n_verts, Starfield_bitmap_instances[idx].verts, tmap_flags);
+		material material_params;
+		material_set_unlit(&material_params, bitmap_id, alpha, blending, false);
+		g3_render_primitives_textured(&material_params, Starfield_bitmap_instances[idx].verts, Starfield_bitmap_instances[idx].n_verts, PRIM_TYPE_TRIS, false);
 	}
-
-	// turn on culling
-	gr_set_cull(cull);
-
-	// restore zbuffer
-	gr_zbuffer_set(saved_zbuffer_mode);
-
+	
 	gr_end_instance_matrix();
 }
 
@@ -1464,180 +1551,29 @@ void subspace_render()
 	glow_pos.xyz.y = 0.0f;
 	glow_pos.xyz.z = 100.0f;
 
-	gr_set_bitmap(Subspace_glow_bitmap, GR_ALPHABLEND_FILTER, GR_BITBLT_MODE_NORMAL, 1.0f);
+	//gr_set_bitmap(Subspace_glow_bitmap, GR_ALPHABLEND_FILTER, GR_BITBLT_MODE_NORMAL, 1.0f);
+	material mat_params;
+	material_set_unlit(&mat_params, Subspace_glow_bitmap, 1.0f, true, false);
+
 	g3_rotate_faraway_vertex(&glow_vex, &glow_pos);
-	g3_draw_bitmap(&glow_vex, 0, 17.0f + 0.5f * Noise[framenum], TMAP_FLAG_TEXTURED);
+	//g3_draw_bitmap(&glow_vex, 0, 17.0f + 0.5f * Noise[framenum], TMAP_FLAG_TEXTURED);
+	g3_render_rect_screen_aligned_2d(&mat_params, &glow_vex, 0, 17.0f + 0.5f * Noise[framenum]);
 
 	glow_pos.xyz.z = -100.0f;
 
 	g3_rotate_faraway_vertex(&glow_vex, &glow_pos);
-	g3_draw_bitmap(&glow_vex, 0, 17.0f + 0.5f * Noise[framenum], TMAP_FLAG_TEXTURED);
+	//g3_draw_bitmap(&glow_vex, 0, 17.0f + 0.5f * Noise[framenum], TMAP_FLAG_TEXTURED);
+	g3_render_rect_screen_aligned_2d(&mat_params, &glow_vex, 0, 17.0f + 0.5f * Noise[framenum]);
 
 	Interp_subspace = 0;
 	gr_zbuffer_set(saved_gr_zbuffering);
 }
 
-
-#ifdef NEW_STARS
-//each star is actualy a line
-//so each star point is actualy two points
-struct star_point {
-	star_point() {
-		memset(p1.color,INT_MAX,4);
-		p2.color[0]=64;
-		p2.color[1]=64;
-		p2.color[2]=64;
-		p2.color[3]=64;
-	}
-	colored_vector p1,p2;
-	void set(vertex* P1,vertex* P2, color*Col) {
-		p1.vec.set_screen_vert(*P1);
-		p2.vec.set_screen_vert(*P2);
-		if(gr_screen.mode == GR_OPENGL)
-			memcpy(p1.color, &Col->red,3);
-		else {
-			memcpy(&p1.color[1], &Col->red,3);
-		}
-	};
-};
-
-class star_point_list {
-	int n_points;
-	star_point *point_list;
-public:
-	star_point_list():n_points(0),point_list(NULL){};
-	~star_point_list(){if(point_list)delete[]point_list;};
-
-	void allocate(int size){
-		if(size<=n_points)return;
-		if(point_list)delete[]point_list;
-		point_list = new star_point[size];
-		n_points = size;
-	}
-	star_point* operator[] (int idx) {
-		return &point_list[idx];
-	}
-	colored_vector* get_buffer(){return &point_list->p1;};
-};
-
-star_point_list star_list;
-
-void new_stars_draw_stars()//don't use me yet, I'm still haveing my API interface figured out-Bobboau
-{
-	star_list.allocate(Num_stars);
-
-	//Num_stars = 1;
-	int i;
-	star *sp;
-	float dist = 0.0f;
-	float ratio;
-	int color;
-	float colorf;
-	vertex p1, p2;
-	int can_draw = 1;
-
-	if ( !last_stars_filled ) {
-		for (sp=Stars,i=0; i<Num_stars; i++, sp++ ) {
-			vertex p2;
-			g3_rotate_faraway_vertex(&p2, &sp->pos);
-			sp->last_star_pos.xyz.x = p2.x;
-			sp->last_star_pos.xyz.y = p2.y;
-			sp->last_star_pos.xyz.z = p2.z;
-		}
-	}
-
-	int tmp_num_stars;
-
-	tmp_num_stars = (Detail.num_stars*Num_stars)/MAX_DETAIL_LEVEL;
-	if (tmp_num_stars < 0 ) {
-		tmp_num_stars = 0;
-	} else if ( tmp_num_stars > Num_stars ) {
-		tmp_num_stars = Num_stars;
-	}
-	
-	int stars_to_draw = 0;
-	for (sp=Stars,i=0; i<tmp_num_stars; i++, sp++ ) {
-		can_draw=1;
-		memset(&p1, 0, sizeof(vertex));
-		memset(&p2, 0, sizeof(vertex));
-
-		// This makes a star look "proper" by not translating the
-		// point around the viewer's eye before rotation.  In other
-		// words, when the ship translates, the stars do not change.
-
-		g3_rotate_faraway_vertex(&p2, &sp->pos);
-		if ( p2.codes ) {
-			can_draw = 0;
-		} else {
-			g3_project_vertex(&p2);
-			if ( p2.flags & PF_OVERFLOW ) {
-				can_draw = 0;
-			}
-		}
-
-		
-
-		if ( can_draw && (Star_flags & (STAR_FLAG_TAIL|STAR_FLAG_DIM)) ) {
-
-			dist = vm_vec_dist_quick( &sp->last_star_pos, (vec3d *)&p2.x );
-
-			if ( dist > Star_max_length ) {
- 				ratio = Star_max_length / dist;
-				dist = Star_max_length;
-			} else {
-				ratio = 1.0f;
-			}
-			
-			ratio *= Star_amount;
-
-			p1.x = p2.x + (sp->last_star_pos.xyz.x-p2.x)*ratio;
-			p1.y = p2.y + (sp->last_star_pos.xyz.y-p2.y)*ratio;
-			p1.z = p2.z + (sp->last_star_pos.xyz.z-p2.z)*ratio;
-
-			p1.flags = 0;	// not projected
-			g3_code_vertex( &p1 );
-
-			if ( p1.codes ) {
-				can_draw = 0;
-			} else {
-				g3_project_vertex(&p1);
-				if ( p1.flags & PF_OVERFLOW ) {
-					can_draw = 0;
-				}
-			}
-		}
-
-		sp->last_star_pos.xyz.x = p2.x;
-		sp->last_star_pos.xyz.y = p2.y;
-		sp->last_star_pos.xyz.z = p2.z;
-
-		if ( !can_draw )	continue;
-
-		if ( Star_flags & STAR_FLAG_DIM )	{
-			colorf = 255.0f - dist*Star_dim;
-			if ( colorf < Star_cap )
-				colorf = Star_cap;
-			color = (fl2i(colorf)*(i&7))/256;
-		} else {
-			color = i & 7;
-		}
-
-		p1.sx-=1.5f;
-		p1.sy-=1.5f;
-		p2.sx+=1.5f;
-		p2.sy+=1.5f;
-		star_list[stars_to_draw++]->set(&p2,&p1,&sp->col);
-	}
-	gr_set_color_fast( &Stars->col );
-	gr_zbuffer_set(GR_ZBUFF_NONE);
-	gr_draw_line_list(star_list.get_buffer(), stars_to_draw);
-	
-}
-#endif	// NEW_STARS
-
-
 void stars_draw_stars()
 {
+	GR_DEBUG_SCOPE("Draw Starfield");
+	TRACE_SCOPE(tracing::DrawStarfield);
+
 	int i;
 	star *sp;
 	float dist = 0.0f;
@@ -1658,6 +1594,12 @@ void stars_draw_stars()
 	tmp_num_stars = (Detail.num_stars * Num_stars) / MAX_DETAIL_LEVEL;
 	CLAMP(tmp_num_stars, 0, Num_stars);
 
+	auto path = graphics::paths::PathRenderer::instance();
+
+	path->saveState();
+	path->resetState();
+
+	path->beginFrame();
 
 	for (i = 0; i < tmp_num_stars; i++) {
 		sp = &Stars[i];
@@ -1714,8 +1656,6 @@ void stars_draw_stars()
 		if ( !can_draw )
 			continue;
 
-		gr_set_color_fast( &sp->col );
-
 		vDst.x = fl2i(p1.screen.xyw.x) - fl2i(p2.screen.xyw.x);
 		vDst.y = fl2i(p1.screen.xyw.y) - fl2i(p2.screen.xyw.y);
 
@@ -1723,13 +1663,24 @@ void stars_draw_stars()
 			p1.screen.xyw.x = p2.screen.xyw.x + 1.0f;
 			p1.screen.xyw.y = p2.screen.xyw.y;
 		}
+		path->beginPath();
 
-		gr_aaline(&p1, &p2);
+		path->moveTo(p1.screen.xyw.x, p1.screen.xyw.y);
+		path->lineTo(p2.screen.xyw.x, p2.screen.xyw.y);
+
+		path->setStrokeColor(&sp->col);
+		path->stroke();
 	}
+	path->endFrame();
+	
+	path->restoreState();
 }
 
 void stars_draw_debris()
 {
+	GR_DEBUG_SCOPE("Draw motion debris");
+	TRACE_SCOPE(tracing::DrawMotionDebris);
+
 	int i;
 	float vdist;
 	vec3d tmp;
@@ -1743,7 +1694,7 @@ void stars_draw_debris()
 	gr_set_color( 0, 0, 0 );
 
 	// turn off fogging
-	if (The_mission.flags & MISSION_FLAG_FULLNEB) {
+	if (The_mission.flags[Mission::Mission_Flags::Fullneb]) {
 		gr_fog_set(GR_FOGMODE_NONE, 0, 0, 0);
 	}
 
@@ -1763,7 +1714,7 @@ void stars_draw_debris()
 			d->vclip = i % MAX_DEBRIS_VCLIPS;	//rand()
 
 			// if we're in full neb mode
-			if((The_mission.flags & MISSION_FLAG_FULLNEB) && (Neb2_render_mode != NEB2_RENDER_NONE)) {
+			if((The_mission.flags[Mission::Mission_Flags::Fullneb]) && (Neb2_render_mode != NEB2_RENDER_NONE)) {
 				d->size = i2fl(myrand() % 4)*BASE_SIZE_NEB;
 			} else {
 				d->size = i2fl(myrand() % 4)*BASE_SIZE;
@@ -1782,14 +1733,19 @@ void stars_draw_debris()
 			int frame = Missiontime / (DEBRIS_ROT_MIN + (i % DEBRIS_ROT_RANGE) * DEBRIS_ROT_RANGE_SCALER);
 			frame %= Debris_vclips[d->vclip].nframes;
 
-			if ( (The_mission.flags & MISSION_FLAG_FULLNEB) && (Neb2_render_mode != NEB2_RENDER_NONE) ) {
-				gr_set_bitmap( Debris_vclips[d->vclip].bm + frame, GR_ALPHABLEND_FILTER, GR_BITBLT_MODE_NORMAL, 0.3f);
-			} else {
-				gr_set_bitmap( Debris_vclips[d->vclip].bm + frame, GR_ALPHABLEND_FILTER, GR_BITBLT_MODE_NORMAL, 1.0f);
-			}
+			float alpha;
 
+			if ( (The_mission.flags[Mission::Mission_Flags::Fullneb]) && (Neb2_render_mode != NEB2_RENDER_NONE) ) {
+				alpha = 0.3f;
+			} else {
+				alpha = 1.0f;
+			}
+			
 			vm_vec_add( &tmp, &d->last_pos, &Eye_position );
-			g3_draw_laser( &d->pos,d->size,&tmp,d->size, TMAP_FLAG_TEXTURED|TMAP_FLAG_XPARENT, 25.0f );
+			//g3_draw_laser( &d->pos,d->size,&tmp,d->size, TMAP_FLAG_TEXTURED|TMAP_FLAG_XPARENT, 25.0f );
+			material mat_params;
+			material_set_unlit(&mat_params, Debris_vclips[d->vclip].bm + frame, alpha, true, true);
+			g3_render_laser_2d(&mat_params, &d->pos, d->size, &tmp, d->size, 25.0f);
 		}
 
 		vm_vec_sub( &d->last_pos, &d->pos, &Eye_position );
@@ -1805,6 +1761,9 @@ void stars_draw_debris()
 
 void stars_draw(int show_stars, int show_suns, int show_nebulas, int show_subspace, int env)
 {
+	GR_DEBUG_SCOPE("Draw Stars");
+	TRACE_SCOPE(tracing::DrawStars);
+
 	int gr_zbuffering_save = gr_zbuffer_get();
 	gr_zbuffer_set(GR_ZBUFF_NONE);
 
@@ -1820,13 +1779,9 @@ void stars_draw(int show_stars, int show_suns, int show_nebulas, int show_subspa
 	fix xt1, xt2;
 	xt1 = timer_get_fixed_seconds();
 #endif
-
-	if ( show_nebulas && (Game_detail_flags & DETAIL_FLAG_NEBULAS) && (Neb2_render_mode != NEB2_RENDER_POF) && (Neb2_render_mode != NEB2_RENDER_LAME))	{
-		nebula_render();
-	}
-
+	
 	// draw background stuff
-	if ( (Neb2_render_mode != NEB2_RENDER_POLY) && (Neb2_render_mode != NEB2_RENDER_LAME) && show_stars ) {
+	if ( show_stars ) {
 		// semi-hack, do we don't fog the background
 		int neb_save = Neb2_render_mode;
 		Neb2_render_mode = NEB2_RENDER_NONE;
@@ -1838,7 +1793,7 @@ void stars_draw(int show_stars, int show_suns, int show_nebulas, int show_subspa
 		stars_draw_background();
 	}
 
-	if ( !env && show_stars && (Nmodel_num < 0) && (Game_detail_flags & DETAIL_FLAG_STARS) && !(The_mission.flags & MISSION_FLAG_FULLNEB) && (supernova_active() < 3) ) {
+	if ( !env && show_stars && (Nmodel_num < 0) && (Game_detail_flags & DETAIL_FLAG_STARS) && !(The_mission.flags[Mission::Mission_Flags::Fullneb]) && (supernova_active() < 3) ) {
 		stars_draw_stars();
 	}
 
@@ -2145,6 +2100,9 @@ void stars_page_in()
 // background nebula models and planets
 void stars_draw_background()
 {	
+	GR_DEBUG_SCOPE("Draw Background");
+	TRACE_SCOPE(tracing::DrawBackground);
+
 	if (Nmodel_num < 0)
 		return;
 
@@ -2162,7 +2120,7 @@ void stars_draw_background()
 }
 
 // call this to set a specific model as the background model
-void stars_set_background_model(char *model_name, char *texture_name, int flags)
+void stars_set_background_model(const char *model_name, const char *texture_name, int flags)
 {
 	if (Nmodel_bitmap >= 0) {
 		bm_unload(Nmodel_bitmap);
@@ -2194,6 +2152,9 @@ void stars_set_background_model(char *model_name, char *texture_name, int flags)
 			Nmodel_instance_num = model_create_instance(false, Nmodel_num);
 		}
 	}
+
+	// Since we have a new skybox we need to rerender the environment map
+	stars_invalidate_environment_map();
 }
 
 // call this to set a specific orientation for the background
@@ -2318,6 +2279,9 @@ int stars_add_sun_entry(starfield_list_entry *sun_ptr)
 		}
 	}
 
+	// The background changed so we need to invalidate the environment map
+	stars_invalidate_environment_map();
+
 	// now check if we can make use of a previously discarded instance entry
 	// this should never happen with FRED
 	if ( !Fred_running ) {
@@ -2332,7 +2296,7 @@ int stars_add_sun_entry(starfield_list_entry *sun_ptr)
 	// ... or add a new one 
 	Suns.push_back(sbi);
 
-	return Suns.size() - 1;
+	return (int)(Suns.size() - 1);
 }
 
 // add an instance for a starfield bitmap (something actually used in a mission)
@@ -2377,6 +2341,9 @@ int stars_add_bitmap_entry(starfield_list_entry *sle)
 		}
 	}
 
+	// The background changed so we need to invalidate the environment map
+	stars_invalidate_environment_map();
+
 	// now check if we can make use of a previously discarded instance entry
 	for (int i = 0; i < (int)Starfield_bitmap_instances.size(); i++) {
 		if ( Starfield_bitmap_instances[i].star_bitmap_index < 0 ) {
@@ -2389,9 +2356,9 @@ int stars_add_bitmap_entry(starfield_list_entry *sle)
 
 	// ... or add a new one
 	Starfield_bitmap_instances.push_back(sbi);
-	starfield_create_bitmap_buffer(Starfield_bitmap_instances.size() - 1);
+	starfield_create_bitmap_buffer((int)(Starfield_bitmap_instances.size() - 1));
 
-	return Starfield_bitmap_instances.size() - 1;
+	return (int)(Starfield_bitmap_instances.size() - 1);
 }
 
 // get the number of entries that each vector contains
@@ -2481,6 +2448,9 @@ void stars_mark_instance_unused(int index, bool is_a_sun)
 		delete [] Starfield_bitmap_instances[index].verts;
 		Starfield_bitmap_instances[index].verts = NULL;
 	}
+
+	// The background changed so we need to invalidate the environment map
+	stars_invalidate_environment_map();
 }
 
 // retrieves the name from starfield_bitmap for the instance index
@@ -2506,9 +2476,10 @@ const char *stars_get_name_from_instance(int index, bool is_a_sun)
 // WMC/Goober5000
 void stars_set_nebula(bool activate)
 {
-	if (activate)
+    The_mission.flags.set(Mission::Mission_Flags::Fullneb, activate);
+	
+    if (activate)
 	{
-		The_mission.flags |= MISSION_FLAG_FULLNEB;
 		Toggle_text_alpha = TOGGLE_TEXT_NEBULA_ALPHA;
 		HUD_contrast = 1;
 		if(Fred_running) {
@@ -2523,12 +2494,13 @@ void stars_set_nebula(bool activate)
 	}
 	else
 	{
-		The_mission.flags &= ~MISSION_FLAG_FULLNEB;
 		Toggle_text_alpha = TOGGLE_TEXT_NORMAL_ALPHA;
 		Neb2_render_mode = NEB2_RENDER_NONE;
 		Debris_vclips = Debris_vclips_normal;
 		HUD_contrast = 0;
 	}
+	// We need to reload the environment map now
+	stars_invalidate_environment_map();
 }
 
 // retrieves the name from starfield_bitmap, really only used by FRED2
@@ -2736,7 +2708,7 @@ void stars_swap_backgrounds(int idx1, int idx2)
 // Goober5000
 bool stars_background_empty(int idx)
 {
-	return !(Backgrounds[idx].suns.size() > 0 || Backgrounds[idx].bitmaps.size() > 0);
+	return (Backgrounds[idx].suns.empty() && Backgrounds[idx].bitmaps.empty());
 }
 
 // Goober5000
@@ -2764,4 +2736,150 @@ void stars_pack_backgrounds()
 			}
 		}
 	}
+}
+
+static void render_environment(int i, vec3d *eye_pos, matrix *new_orient, float new_zoom)
+{
+	bm_set_render_target(gr_screen.envmap_render_target, i);
+
+	gr_clear();
+
+	g3_set_view_matrix( eye_pos, new_orient, new_zoom );
+
+	gr_set_proj_matrix( PI_2 * new_zoom, 1.0f, Min_draw_distance, Max_draw_distance);
+	gr_set_view_matrix( &Eye_position, &Eye_matrix );
+
+	if ( Game_subspace_effect ) {
+		stars_draw(0, 0, 0, 1, 1);
+	} else {
+		stars_draw(0, 1, 1, 0, 1);
+	}
+
+	gr_end_view_matrix();
+	gr_end_proj_matrix();
+}
+
+void stars_setup_environment_mapping(camid cid) {
+	matrix new_orient = IDENTITY_MATRIX;
+
+	extern float View_zoom;
+	float old_zoom = View_zoom, new_zoom = 1.0f;//0.925f;
+	int i = 0;
+
+	if(!cid.isValid())
+		return;
+
+	vec3d cam_pos;
+	matrix cam_orient;
+	cid.getCamera()->get_info(&cam_pos, &cam_orient);
+
+	// prefer the mission specified envmap over the static-generated envmap, but
+	// the dynamic envmap should always get preference if in a subspace mission
+	if ( !Dynamic_environment && Mission_env_map >= 0 ) {
+		ENVMAP = Mission_env_map;
+		return;
+	}
+
+	if (gr_screen.envmap_render_target < 0) {
+		if (ENVMAP >= 0)
+			return;
+
+		if (Mission_env_map >= 0) {
+			ENVMAP = Mission_env_map;
+		} else {
+			ENVMAP = Default_env_map;
+		}
+
+		return;
+	}
+
+	if (Env_cubemap_drawn) {
+		// Nothing to do here anymore
+		return;
+	}
+
+	GR_DEBUG_SCOPE("Environment Mapping");
+	TRACE_SCOPE(tracing::EnvironmentMapping);
+
+	ENVMAP = gr_screen.envmap_render_target;
+
+	/*
+	 * Envmap matrix setup -- left-handed
+	 * -------------------------------------------------
+	 * Face --	Forward		Up		Right
+	 * px		+X			+Y		-Z
+	 * nx		-X			+Y		+Z
+	 * py		+Y			-Z		+X
+	 * ny		-Y			+Z		+X
+	 * pz		+Z 			+Y		+X
+	 * nz		-Z			+Y		-X
+	*/
+	// NOTE: OpenGL needs up/down reversed
+
+	// Save the previous render target so we can reset it once we are done here
+	auto previous_target = gr_screen.rendering_to_texture;
+
+	// face 1 (px / right)
+	memset( &new_orient, 0, sizeof(matrix) );
+	new_orient.vec.fvec.xyz.x =  1.0f;
+	new_orient.vec.uvec.xyz.y =  1.0f;
+	new_orient.vec.rvec.xyz.z = -1.0f;
+	render_environment(i, &cam_pos, &new_orient, new_zoom);
+	i++; // bump!
+
+	// face 2 (nx / left)
+	memset( &new_orient, 0, sizeof(matrix) );
+	new_orient.vec.fvec.xyz.x = -1.0f;
+	new_orient.vec.uvec.xyz.y =  1.0f;
+	new_orient.vec.rvec.xyz.z =  1.0f;
+	render_environment(i, &cam_pos, &new_orient, new_zoom);
+	i++; // bump!
+
+	// face 3 (py / up)
+	memset( &new_orient, 0, sizeof(matrix) );
+	new_orient.vec.fvec.xyz.y =  (gr_screen.mode == GR_OPENGL) ?  1.0f : -1.0f;
+	new_orient.vec.uvec.xyz.z =  (gr_screen.mode == GR_OPENGL) ? -1.0f :  1.0f;
+	new_orient.vec.rvec.xyz.x =  1.0f;
+	render_environment(i, &cam_pos, &new_orient, new_zoom);
+	i++; // bump!
+
+	// face 4 (ny / down)
+	memset( &new_orient, 0, sizeof(matrix) );
+	new_orient.vec.fvec.xyz.y =  (gr_screen.mode == GR_OPENGL) ? -1.0f :  1.0f;
+	new_orient.vec.uvec.xyz.z =  (gr_screen.mode == GR_OPENGL) ?  1.0f : -1.0f;
+	new_orient.vec.rvec.xyz.x =  1.0f;
+	render_environment(i, &cam_pos, &new_orient, new_zoom);
+	i++; // bump!
+
+	// face 5 (pz / forward)
+	memset( &new_orient, 0, sizeof(matrix) );
+	new_orient.vec.fvec.xyz.z =  1.0f;
+	new_orient.vec.uvec.xyz.y =  1.0f;
+	new_orient.vec.rvec.xyz.x =  1.0f;
+	render_environment(i, &cam_pos, &new_orient, new_zoom);
+	i++; // bump!
+
+	// face 6 (nz / back)
+	memset( &new_orient, 0, sizeof(matrix) );
+	new_orient.vec.fvec.xyz.z = -1.0f;
+	new_orient.vec.uvec.xyz.y =  1.0f;
+	new_orient.vec.rvec.xyz.x = -1.0f;
+	render_environment(i, &cam_pos, &new_orient, new_zoom);
+
+
+	// we're done, so now reset
+	bm_set_render_target(previous_target);
+	g3_set_view_matrix( &cam_pos, &cam_orient, old_zoom );
+
+	if ( !Dynamic_environment ) {
+		Env_cubemap_drawn = true;
+	}
+}
+void stars_set_dynamic_environment(bool dynamic) {
+	Dynamic_environment = dynamic;
+	stars_invalidate_environment_map();
+}
+void stars_invalidate_environment_map() {
+	// This will cause a redraw in the next frame
+	Env_cubemap_drawn = false;
 }

@@ -51,7 +51,7 @@ int ssm_info_lookup(const char *name)
 
 	for (auto it = Ssm_info.cbegin(); it != Ssm_info.cend(); ++it)
 		if (!stricmp(name, it->name))
-			return std::distance(Ssm_info.cbegin(), it);
+			return (int)std::distance(Ssm_info.cbegin(), it);
 
 	return -1;
 }
@@ -204,7 +204,7 @@ void ssm_init()
 	validate_SSM_entries();
 }
 
-void ssm_get_random_start_pos(vec3d *out, vec3d *start, matrix *orient, int ssm_index)
+void ssm_get_random_start_pos(vec3d *out, vec3d *start, matrix *orient, size_t ssm_index)
 {
 	vec3d temp;
 	ssm_info *s = &Ssm_info[ssm_index];
@@ -234,7 +234,7 @@ void ssm_get_random_start_pos(vec3d *out, vec3d *start, matrix *orient, int ssm_
 		vm_vec_scale_add(&temp, start, &orient->vec.fvec, radius);
 		break;
 	default:
-		Assertion(false, "Unknown shape '%d' in SSM type #%d ('%s'). This should not be possible; get a coder!\n", s->shape, ssm_index, s->name);
+		Assertion(false, "Unknown shape '%d' in SSM type #" SIZE_T_ARG " ('%s'). This should not be possible; get a coder!\n", s->shape, ssm_index, s->name);
 		break;
 	}
 
@@ -308,7 +308,7 @@ void ssm_create(object *target, vec3d *start, size_t ssm_index, ssm_firing_info 
 
 		ssm_info *si = &Ssm_info[ssm_index];
 		weapon_info *wip = &Weapon_info[si->weapon_info_index];
-		if (wip->wi_flags & WIF_BEAM) {
+		if (wip->wi_flags[Weapon::Info_Flags::Beam]) {
 			ssm.sinfo.duration = ((si->warp_time - ((wip->b_info.beam_warmup / 1000.0f) + wip->b_info.beam_life + (wip->b_info.beam_warmdown / 1000.0f))) / 2.0f) / si->warp_time;
 		} else {
 			ssm.sinfo.duration = 0.5f;
@@ -327,9 +327,9 @@ void ssm_create(object *target, vec3d *start, size_t ssm_index, ssm_firing_info 
 	
 	if(Ssm_info[ssm_index].send_message) {
 		if (!Ssm_info[ssm_index].use_custom_message)
-			HUD_printf(XSTR("Firing artillery", 1570));
+			HUD_printf("%s", XSTR("Firing artillery", 1570));
 		else
-			HUD_printf(Ssm_info[ssm_index].message);
+			HUD_printf("%s", Ssm_info[ssm_index].message);
 	}
 	if (Ssm_info[ssm_index].sound_index >= 0) {
 		snd_play(&Snds[Ssm_info[ssm_index].sound_index]);
@@ -356,9 +356,7 @@ void ssm_process()
 	moveup = Ssm_strikes.begin();
 	while ( moveup != Ssm_strikes.end() ) {
 		// get the type
-		if(moveup->sinfo.ssm_index < 0){
-			continue;
-		}
+		Assertion(moveup->sinfo.ssm_index < Ssm_info.size(), "Invalid SSM index detected!");
 		si = &Ssm_info[moveup->sinfo.ssm_index];
 
 		// check all the individual missiles
@@ -373,7 +371,7 @@ void ssm_process()
 					if ((1.0f - fireball_lifeleft_percent(&Objects[moveup->fireballs[idx]])) >= moveup->sinfo.duration) {
 						weapon_info *wip = &Weapon_info[si->weapon_info_index];
 						// are we a beam? -MageKing17
-						if (wip->wi_flags & WIF_BEAM) {
+						if (wip->wi_flags[Weapon::Info_Flags::Beam]) {
 							beam_fire_info fire_info;
 							memset(&fire_info, 0, sizeof(beam_fire_info));
 

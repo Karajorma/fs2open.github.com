@@ -105,7 +105,7 @@ training_message_mods Training_message_mods[MAX_TRAINING_MESSAGE_MODS];
 
 // local module prototypes
 void training_process_message(char *message);
-void message_translate_tokens(char *buf, char *text);
+void message_translate_tokens(char *buf, const char *text);
 
 
 #define NUM_DIRECTIVE_GAUGES			3
@@ -207,7 +207,7 @@ bool HudGaugeDirectives::canRender()
 	}
 
 	if (gauge_config == HUD_ETS_GAUGE) {
-		if (Ships[Player_obj->instance].flags2 & SF2_NO_ETS) {
+		if (Ships[Player_obj->instance].flags[Ship::Ship_Flags::No_ets]) {
 			return false;
 		}
 	}
@@ -245,7 +245,7 @@ void HudGaugeDirectives::render(float frametime)
 	renderBitmap(directives_top.first_frame, position[0], position[1]);
 
 	// print out title
-	renderPrintf(position[0] + header_offsets[0], position[1] + header_offsets[1], EG_OBJ_TITLE, XSTR( "directives", 422));
+	renderPrintf(position[0] + header_offsets[0], position[1] + header_offsets[1], EG_OBJ_TITLE, "%s", XSTR( "directives", 422));
 
 	bx = position[0];
 	by = position[1] + middle_frame_offset_y;
@@ -380,9 +380,6 @@ int comp_training_lines_by_born_on_date(const void *m1, const void *m2)
 	int *e1, *e2;
 	e1 = (int*) m1;
 	e2 = (int*) m2;
-	
-	Assert(Mission_events[*e1 & 0xffff].born_on_date != 0);
-	Assert(Mission_events[*e2 & 0xffff].born_on_date != 0);
 
 	return (Mission_events[*e1 & 0xffff].born_on_date - Mission_events[*e2 & 0xffff].born_on_date);
 }
@@ -643,9 +640,10 @@ char *translate_message_token(char *str)
 /**
  * Translates all special tokens in a message, producing the new finalized message to be displayed
  */
-void message_translate_tokens(char *buf, char *text)
+void message_translate_tokens(char *buf, const char *text)
 {
-	char temp[40], *toke1, *toke2, *ptr;
+	char temp[40], *ptr;
+	const char *toke1, *toke2;
 	int r;
 
 	*buf = 0;
@@ -846,7 +844,7 @@ void message_training_setup(int m, int length, char *special_message)
 		if (length > 0)
 			Training_message_timestamp = timestamp(length * 1000);
 		else
-			Training_message_timestamp = timestamp(TRAINING_TIMING_BASE + strlen(Messages[m].message) * TRAINING_TIMING);  // no voice file playing
+			Training_message_timestamp = timestamp(TRAINING_TIMING_BASE + (int)strlen(Messages[m].message) * TRAINING_TIMING);  // no voice file playing
 
 	} else
 		Training_message_timestamp = 0;
@@ -855,7 +853,7 @@ void message_training_setup(int m, int length, char *special_message)
 /**
  * Add a message to the queue to be sent later
  */
-void message_training_queue(char *text, int timestamp, int length)
+void message_training_queue(const char *text, int timestamp, int length)
 {
 	int m;
 	char temp_buf[TRAINING_MESSAGE_LENGTH];
@@ -934,7 +932,7 @@ void message_training_queue_check()
 
 	// if the instructor is dying or departing, do nothing
 	if ( iship_num != -1 )	// added by Goober5000
-		if (Ships[iship_num].flags & (SF_DYING | SF_DEPARTING))
+		if (Ships[iship_num].is_dying_or_departing())
 			return;
 
 	if (Training_failure)
@@ -1066,7 +1064,7 @@ void HudGaugeTrainingMessages::render(float frametime)
 		while ((str - Training_lines[i]) < Training_line_lengths[i]) {  // loop through each character of each line
 			if ((count < MAX_TRAINING_MESSAGE_MODS) && (str == Training_message_mods[count].pos)) {
 				buf[z] = 0;
-				renderPrintf(x, y, buf);
+				renderPrintf(x, y, "%s", buf);
 				gr_get_string_size(&z, NULL, buf);
 				x += z;
 				z = 0;

@@ -35,14 +35,14 @@
 #define NUM_COMMON_BUTTONS	6
 
 struct brief_common_buttons {	
-	char *filename;
+	const char *filename;
 	int x, y;
 	int xt, yt;
 	int hotspot;
 	int repeat;
 	UI_BUTTON button;  // because we have a class inside this struct, we need the constructor below..
 
-	brief_common_buttons(char *name, int x1, int y1, int xt1, int yt1, int h, int r = 0) : filename(name), x(x1), y(y1), xt(xt1), yt(yt1), hotspot(h), repeat(r) {}
+	brief_common_buttons(const char *name, int x1, int y1, int xt1, int yt1, int h, int r = 0) : filename(name), x(x1), y(y1), xt(xt1), yt(yt1), hotspot(h), repeat(r) {}
 };
 
 extern brief_common_buttons Common_buttons[3][GR_NUM_RESOLUTIONS][NUM_COMMON_BUTTONS];
@@ -90,10 +90,10 @@ void ship_select_common_init();
 
 int mission_ui_background_load(const char *custom_background, const char *single_background, const char *multi_background = NULL);
 
-void common_set_interface_palette(char *filename = NULL);		// set the interface palette
+void common_set_interface_palette(const char *filename = NULL);		// set the interface palette
 void common_free_interface_palette();		// restore game palette
 
-void load_wing_icons(char *filename);
+void load_wing_icons(const char *filename);
 void unload_wing_icons();
 
 void	common_flash_button_init();
@@ -205,7 +205,7 @@ int store_wss_data(ubyte *block, int max_size, int sound,int player_index);
 int restore_wss_data(ubyte *block);
 
 class ship_info;
-void draw_model_icon(int model_id, int flags, float closeup_zoom, int x1, int x2, int y1, int y2, const ship_info* sip = NULL, int resize_mode = GR_RESIZE_FULL, const vec3d *closeup_pos = &vmd_zero_vector);
+void draw_model_icon(int model_id, int flags, float closeup_zoom, int x1, int x2, int y1, int y2, ship_info* sip = NULL, int resize_mode = GR_RESIZE_FULL, const vec3d *closeup_pos = &vmd_zero_vector);
 void draw_model_rotating(model_render_params *render_info, int model_id, int x1, int y1, int x2, int y2, float *rotation_buffer, vec3d *closeup_pos=NULL, float closeup_zoom = .65f, float rev_rate = REVOLUTION_RATE, int flags = MR_AUTOCENTER | MR_NO_FOGGING, int resize_mode=GR_RESIZE_FULL, int effect = 2);
 
 void common_set_team_pointers(int team);

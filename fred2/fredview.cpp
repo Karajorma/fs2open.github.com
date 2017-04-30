@@ -18,7 +18,7 @@
 #include "cfile/cfile.h"
 #include "Grid.h"
 #include "MainFrm.h"
-#include "editor.h"
+#include "MFCGraphicsOperations.h"
 #include "Management.h"
 #include "graphics/2d.h"
 #include "render/3d.h"
@@ -56,11 +56,9 @@
 #include "object/objectdock.h"
 #include "species_defs/species_defs.h"
 #include "sound/audiostr.h"
+#include "mission/missiongrid.h"
 
 #include "osapi/osapi.h"
-
-#include "gl/gl.h"
-#include "gl/glu.h"
 
 #ifdef _DEBUG
 #undef THIS_FILE
@@ -68,14 +66,6 @@ static char THIS_FILE[] = __FILE__;
 #endif
 
 subsys_to_render Render_subsys;
-
-// the next variable is used for executable stamping -- please leave it alone!!!
-#define FRED_EXPIRE_TIME	(7 * 1000)
-char stamp[STAMP_STRING_LENGTH] = { STAMP_STRING };
-int expire_game;
-
-#define EXPIRE_BAD_CHECKSUM			1
-#define EXPIRE_BAD_TIME					2
 
 #define SHIP_TYPES			8000
 #define REDUCER				100.0f
@@ -396,16 +386,6 @@ CFREDView::~CFREDView()
 	delete m_pGDlg;
 }
 
-void CALLBACK expire_game_proc( HWND wnd, UINT uMsg, UINT idEvent, DWORD dwTime)
-{
-	KillTimer(wnd, 1);
-	if ( expire_game == EXPIRE_BAD_CHECKSUM )
-		MessageBox (wnd, "Fred can no longer run due to internal overlay error", NULL, MB_OK | MB_ICONERROR |MB_TASKMODAL|MB_SETFOREGROUND);
-	else
-		MessageBox (wnd, "Error: cannot enter DOS mode for 80x40 color text mode display.", NULL, MB_OK | MB_ICONERROR|MB_TASKMODAL|MB_SETFOREGROUND);
-	exit(1);
-}
-
 BOOL CFREDView::PreCreateWindow(CREATESTRUCT& cs)
 {
 	BOOL casperl;
@@ -552,7 +532,7 @@ int drag_objects()
 		objp = GET_FIRST(&obj_used_list);
 		while (objp != END_OF_LIST(&obj_used_list))	{
 			Assert(objp->type != OBJ_NONE);
-			if (objp->flags & OF_MARKED) {
+			if (objp->flags[Object::Object_Flags::Marked]) {
 				if ((objp->type == OBJ_SHIP) || (objp->type == OBJ_START)) {
 					z = Ships[objp->instance].wingnum;
 					if (!flag)
@@ -582,7 +562,7 @@ int drag_objects()
 			objp = GET_FIRST(&obj_used_list);
 			while (objp != END_OF_LIST(&obj_used_list))	{
 				ptr = GET_NEXT(objp);
-				if (objp->flags & OF_TEMP_MARKED)
+				if (objp->flags [Object::Object_Flags::Temp_marked])
 					delete_object(objp);
 
 				objp = ptr;
@@ -596,8 +576,8 @@ int drag_objects()
 
 		objp = GET_FIRST(&obj_used_list);
 		while (objp != END_OF_LIST(&obj_used_list))	{
-			if (objp->flags & OF_TEMP_MARKED) {
-				objp->flags &= ~OF_TEMP_MARKED;
+			if (objp->flags [Object::Object_Flags::Temp_marked]) {
+                objp->flags.remove(Object::Object_Flags::Temp_marked);
 				mark_object(OBJ_INDEX(objp));
 			}
 
@@ -671,7 +651,7 @@ int drag_objects()
 		objp = GET_FIRST(&obj_used_list);
 		while (objp != END_OF_LIST(&obj_used_list))	{
 			Assert(objp->type != OBJ_NONE);
-			if (objp->flags & OF_MARKED) {
+			if (objp->flags[Object::Object_Flags::Marked]) {
 				vm_vec_add(&objp->pos, &objp->pos, &movement_vector);
 				if (objp->type == OBJ_WAYPOINT) {
 					waypoint *wpt = find_waypoint_with_instance(objp->instance);
@@ -685,7 +665,7 @@ int drag_objects()
 
 		objp = GET_FIRST(&obj_used_list);
 		while (objp != END_OF_LIST(&obj_used_list)) {
-			if (objp->flags & OF_MARKED)
+			if (objp->flags[Object::Object_Flags::Marked])
 				object_moved(objp);
 
 			objp = GET_NEXT(objp);
@@ -711,7 +691,7 @@ void drag_rotate_save_backup()
 	objp = GET_FIRST(&obj_used_list);
 	while (objp != END_OF_LIST(&obj_used_list))			{
 		Assert(objp->type != OBJ_NONE);
-		if (objp->flags & OF_MARKED)	{
+		if (objp->flags[Object::Object_Flags::Marked])	{
 			rotation_backup[OBJ_INDEX(objp)].pos = objp->pos;
 			rotation_backup[OBJ_INDEX(objp)].orient = objp->orient;
 		}
@@ -782,7 +762,7 @@ int drag_rotate_objects()
 	objp = GET_FIRST(&obj_used_list);
 	while (objp != END_OF_LIST(&obj_used_list))			{
 		Assert(objp->type != OBJ_NONE);
-		if ((objp->flags & OF_MARKED) && (cur_object_index != OBJ_INDEX(objp) )) {
+		if ((objp->flags[Object::Object_Flags::Marked]) && (cur_object_index != OBJ_INDEX(objp) )) {
 			if (Group_rotate) {
 				matrix rot_trans;
 				vec3d tmpv1, tmpv2;
@@ -824,7 +804,7 @@ int drag_rotate_objects()
 
 	objp = GET_FIRST(&obj_used_list);
 	while (objp != END_OF_LIST(&obj_used_list)) {
-		if (objp->flags & OF_MARKED)
+		if (objp->flags[Object::Object_Flags::Marked])
 			object_moved(objp);
 
 		objp = GET_NEXT(objp);
@@ -862,7 +842,7 @@ void cancel_drag()
 				objp = GET_FIRST(&obj_used_list);
 				while (objp != END_OF_LIST(&obj_used_list))	{
 					Assert(objp->type != OBJ_NONE);
-					if (objp->flags & OF_MARKED)
+					if (objp->flags[Object::Object_Flags::Marked])
 						vm_vec_add(&objp->pos, &objp->pos, &movement_vector);
 
 					objp = GET_NEXT(objp);
@@ -875,7 +855,7 @@ void cancel_drag()
 			objp = GET_FIRST(&obj_used_list);
 			while (objp != END_OF_LIST(&obj_used_list))	{
 				Assert(objp->type != OBJ_NONE);
-				if (objp->flags & OF_MARKED) {
+				if (objp->flags[Object::Object_Flags::Marked]) {
 					int obj_index = OBJ_INDEX(objp);
 
 					if(!IS_VEC_NULL(&rotation_backup[obj_index].orient.vec.rvec) && 
@@ -948,12 +928,12 @@ void CFREDView::OnLButtonDown(UINT nFlags, CPoint point)
 			Cur_bitmap = on_object;
 			Bg_bitmap_dialog -> update_data();
 
-		} else if ((nFlags & MK_SHIFT) || (on_object == -1) || !(Objects[on_object].flags & OF_MARKED)) {
+		} else if ((nFlags & MK_SHIFT) || (on_object == -1) || !(Objects[on_object].flags[Object::Object_Flags::Marked])) {
 			if (!(nFlags & MK_SHIFT))
 				unmark_all();
 
 			if (on_object != -1) {
-				if (Objects[on_object].flags & OF_MARKED)
+				if (Objects[on_object].flags[Object::Object_Flags::Marked])
 					unmark_object(on_object);
 				else
 					mark_object(on_object);
@@ -1083,7 +1063,7 @@ void CFREDView::OnLButtonUp(UINT nFlags, CPoint point)
 			if (MessageBox(msg, "Query", MB_YESNO) == IDYES) {
 				objp = GET_FIRST(&obj_used_list);
 				while (objp != END_OF_LIST(&obj_used_list))	{
-					if (objp->flags & OF_MARKED) {
+					if (objp->flags[Object::Object_Flags::Marked]) {
 						if (Wings[Duped_wing].wave_count >= MAX_SHIPS_PER_WING) {
 							MessageBox("Max ships per wing limit reached");
 							break;
@@ -1125,7 +1105,7 @@ void CFREDView::OnLButtonUp(UINT nFlags, CPoint point)
 //	This function never gets called because nothing causes
 //	the WM_GOODBYE event to occur.
 // False! When you close the Ship Dialog, this function is called! --MK, 8/30/96
-LONG CFREDView::OnGoodbye(UINT wParam, LONG lParam)
+LRESULT CFREDView::OnGoodbye(WPARAM wParam, LPARAM lParam)
 {
 	Ship_editor_dialog.DestroyWindow();
 	Wing_editor_dialog.DestroyWindow();
@@ -1209,7 +1189,7 @@ void CFREDView::OnSetFocus(CWnd* pOldWnd)
 		Local_modified = 0;
 	}
 
-	Fred_active = 1;
+	Fred_active = true;
 	CView::OnSetFocus(pOldWnd);
 	nprintf(("Fred routing", "Main window focus accepted\n"));
 	key_got_focus();
@@ -1230,7 +1210,7 @@ void CFREDView::OnSetFocus(CWnd* pOldWnd)
 void CFREDView::OnKillFocus(CWnd* pNewWnd) 
 {
 	nprintf(("Fred routing", "OnKillFocus() called\n"));
-	Fred_active = 0;
+	Fred_active = false;
 	Local_modified = 0;
 	CView::OnKillFocus(pNewWnd);
 	key_lost_focus();
@@ -1283,7 +1263,7 @@ void select_objects()
 	ptr = GET_FIRST(&obj_used_list);
 	while (ptr != END_OF_LIST(&obj_used_list)) {
 		valid = 1;
-		if (ptr->flags & OF_HIDDEN)
+		if (ptr->flags[Object::Object_Flags::Hidden])
 			valid = 0;
 
 		Assert(ptr->type != OBJ_NONE);
@@ -1315,7 +1295,7 @@ void select_objects()
 				y = (int) v.screen.xyw.y;
 
 				if (x >= marking_box.x1 && x <= marking_box.x2 && y >= marking_box.y1 && y <= marking_box.y2) {
-					if (ptr->flags & OF_MARKED)
+					if (ptr->flags[Object::Object_Flags::Marked])
 						unmark_object(OBJ_INDEX(ptr));
 					else
 						mark_object(OBJ_INDEX(ptr));
@@ -1331,7 +1311,7 @@ void select_objects()
 	if (icon_mode) {
 		ptr = GET_FIRST(&obj_used_list);
 		while (ptr != END_OF_LIST(&obj_used_list)) {
-			if ((ptr->flags & OF_MARKED) && (ptr->type != OBJ_POINT))
+			if ((ptr->flags[Object::Object_Flags::Marked]) && (ptr->type != OBJ_POINT))
 				unmark_object(OBJ_INDEX(ptr));
 
 			ptr = GET_NEXT(ptr);
@@ -1341,7 +1321,7 @@ void select_objects()
 	Update_ship = Update_wing = 1;
 }
 
-LONG CFREDView::OnMenuPopupShips(UINT wParam, LONG lParam)
+LRESULT CFREDView::OnMenuPopupShips(WPARAM wParam, LPARAM lParam)
 {
 	CMenu	menu;
 	CPoint	point;
@@ -1357,7 +1337,7 @@ LONG CFREDView::OnMenuPopupShips(UINT wParam, LONG lParam)
 	return 0L;
 }
 
-LONG CFREDView::OnMenuPopupEdit(UINT wParam, LONG lParam)
+LRESULT CFREDView::OnMenuPopupEdit(WPARAM wParam, LPARAM lParam)
 {
 	CMenu	menu;
 	CPoint	point;
@@ -2064,14 +2044,14 @@ void CFREDView::OnSelectList()
 // position camera to view all objects on the screen at once.  Doesn't change orientation.
 void view_universe(int just_marked)
 {
-	int i, max = 0, flags[MAX_OBJECTS];
+	int i, max = 0, obj_flags[MAX_OBJECTS];
 	float dist, largest = 20.0f;
 	vec3d center, p1, p2;		// center of all the objects collectively
 	vertex v;
 	object *ptr;
 
 	for (i=0; i<MAX_OBJECTS; i++)
-		flags[i] = 0;
+		obj_flags[i] = 0;
 
 	if (just_marked)
 		ptr = &Objects[cur_object_index];
@@ -2084,7 +2064,7 @@ void view_universe(int just_marked)
 
 	ptr = GET_FIRST(&obj_used_list);
 	while (ptr != END_OF_LIST(&obj_used_list)) {
-		if (!just_marked || (ptr->flags & OF_MARKED)) {
+		if (!just_marked || (ptr->flags[Object::Object_Flags::Marked])) {
 			center = ptr->pos;
 			if (center.xyz.x < p1.xyz.x)
 				p1.xyz.x = center.xyz.x;
@@ -2106,12 +2086,12 @@ void view_universe(int just_marked)
 	vm_vec_avg(&center, &p1, &p2);
 	ptr = GET_FIRST(&obj_used_list);
 	while (ptr != END_OF_LIST(&obj_used_list)) {
-		if (!just_marked || (ptr->flags & OF_MARKED)) {
+		if (!just_marked || (ptr->flags[Object::Object_Flags::Marked])) {
 			dist = vm_vec_dist_squared(&center, &ptr->pos);
 			if (dist > largest)
 				largest = dist;
 
-			flags[OBJ_INDEX(ptr)] = 1;  // flag object as needing on-screen check
+			obj_flags[OBJ_INDEX(ptr)] = 1;  // flag object as needing on-screen check
 			if (OBJ_INDEX(ptr) > max)
 				max = OBJ_INDEX(ptr);
 		}
@@ -2125,7 +2105,7 @@ void view_universe(int just_marked)
 
 	ptr = GET_FIRST(&obj_used_list);
 	while (ptr != END_OF_LIST(&obj_used_list)) {
-		if (!just_marked || (ptr->flags & OF_MARKED)) {
+		if (!just_marked || (ptr->flags[Object::Object_Flags::Marked])) {
 			g3_rotate_vertex(&v, &ptr->pos);
 			Assert(!(v.codes & CC_BEHIND));
 			if (g3_project_vertex(&v) & PF_OVERFLOW)
@@ -2197,8 +2177,8 @@ void CFREDView::OnFormWing()
 	object *ptr = GET_FIRST(&obj_used_list);
 	bool found = false;
 	while (ptr != END_OF_LIST(&obj_used_list)) {
-		if (( (ptr->type == OBJ_SHIP) || (ptr->type == OBJ_START) ) && (ptr->flags & OF_MARKED)) {
-			if(Ships[ptr->instance].flags & SF_REINFORCEMENT) {
+		if (( (ptr->type == OBJ_SHIP) || (ptr->type == OBJ_START) ) && (ptr->flags[Object::Object_Flags::Marked])) {
+			if(Ships[ptr->instance].flags[Ship::Ship_Flags::Reinforcement]) {
 				found = true;
 				break;
 			}
@@ -2212,7 +2192,7 @@ void CFREDView::OnFormWing()
 		if(ok == IDOK) {
 			ptr = GET_FIRST(&obj_used_list);
 			while (ptr != END_OF_LIST(&obj_used_list)) {
-				if (( (ptr->type == OBJ_SHIP) || (ptr->type == OBJ_START) ) && (ptr->flags & OF_MARKED)) {
+				if (( (ptr->type == OBJ_SHIP) || (ptr->type == OBJ_START) ) && (ptr->flags[Object::Object_Flags::Marked])) {
 					set_reinforcement(Ships[ptr->instance].ship_name, 0);
 				}
 
@@ -2235,11 +2215,11 @@ void CFREDView::OnUpdateFormWing(CCmdUI* pCmdUI)
 	if (query_valid_object()) {
 		ptr = GET_FIRST(&obj_used_list);
 		while (ptr != END_OF_LIST(&obj_used_list)) {
-			if (ptr->flags & OF_MARKED) {
+			if (ptr->flags[Object::Object_Flags::Marked]) {
 				if (ptr->type == OBJ_SHIP)
 				{
 					int ship_type = ship_query_general_type(ptr->instance);
-					if(ship_type > -1 && (Ship_types[ship_type].ai_bools & STI_AI_CAN_FORM_WING))
+					if(ship_type > -1 && (Ship_types[ship_type].flags[Ship::Type_Info_Flags::AI_can_form_wing]))
 					{
 						count++;
 					}
@@ -2278,7 +2258,7 @@ int query_single_wing_marked()
 //		if (Ships[Objects[obj].instance].wingnum != cur_wing)
 //			return 0;
 		Assert(Ships[Objects[obj].instance].wingnum == cur_wing);
-		if (!(Objects[obj].flags & OF_MARKED))  // ensure all ships in wing.are marked
+		if (!(Objects[obj].flags[Object::Object_Flags::Marked]))  // ensure all ships in wing.are marked
 			return 0;
 	}
 
@@ -2459,7 +2439,7 @@ int CFREDView::global_error_check()
 
 			if (ptr->type == OBJ_START) {
 				t++;
-				if (!(Ship_info[z].flags & SIF_PLAYER_SHIP)) {
+				if (!(Ship_info[z].flags[Ship::Info_Flags::Player_ship])) {
 					ptr->type = OBJ_SHIP;
 					Player_starts--;
 					t--;
@@ -2540,13 +2520,13 @@ int CFREDView::global_error_check()
 				}
 			}
 
-			if ( (Ships[i].flags & SF_KILL_BEFORE_MISSION) && (Ships[i].hotkey >= 0) ){
+			if ( (Ships[i].flags[Ship::Ship_Flags::Kill_before_mission]) && (Ships[i].hotkey >= 0) ){
 				if (error("Ship flagged as \"destroy before mission start\" has a hotkey assignment")){
 					return 1;
 				}
 			}
 
-			if ( (Ships[i].flags & SF_KILL_BEFORE_MISSION) && (ptr->type == OBJ_START) ){
+			if ( (Ships[i].flags[Ship::Ship_Flags::Kill_before_mission]) && (ptr->type == OBJ_START) ){
 				if (error("Player start flagged as \"destroy before mission start\"")){
 					return 1;
 				}
@@ -2766,7 +2746,7 @@ int CFREDView::global_error_check()
 					}
 
 					int ship_type = ship_query_general_type(ship);
-					if(ship_type < 0 || !(Ship_types[ship_type].ai_bools & STI_AI_CAN_FORM_WING))
+					if(ship_type < 0 || !(Ship_types[ship_type].flags[Ship::Type_Info_Flags::AI_can_form_wing]))
 					{
 							if (error("Ship \"%s\" is an illegal type to be in a wing", Ships[ship].ship_name)){
 								return 1;
@@ -2989,7 +2969,7 @@ int CFREDView::global_error_check()
 		starting_wing = (ship_starting_wing_lookup(Wings[i].name) != -1);
 
 		// first, be sure this isn't a reinforcement wing.
-		if ( starting_wing && (Wings[i].flags & WF_REINFORCEMENT) ) {
+		if ( starting_wing && (Wings[i].flags[Ship::Wing_Flags::Reinforcement]) ) {
 			if ( error("Starting Wing %s marked as reinforcement.  This wing\nshould either be renamed, or unmarked as reinforcement.", Wings[i].name) ){
 // Goober5000				return 1;
 			}
@@ -3427,6 +3407,7 @@ char *error_check_initial_orders(ai_goal *goals, int ship, int wing)
 		switch (goals[i].ai_mode) {
 			case AI_GOAL_NONE:
 			case AI_GOAL_CHASE_ANY:
+			case AI_GOAL_CHASE_SHIP_CLASS:
 			case AI_GOAL_UNDOCK:
 			case AI_GOAL_KEEP_SAFE_DISTANCE:
 			case AI_GOAL_PLAY_DEAD:
@@ -3951,8 +3932,8 @@ void CFREDView::OnHideObjects()
 
 	ptr = GET_FIRST(&obj_used_list);
 	while (ptr != END_OF_LIST(&obj_used_list)) {
-		if (ptr->flags & OF_MARKED) {
-			ptr->flags |= OF_HIDDEN;
+		if (ptr->flags[Object::Object_Flags::Marked]) {
+            ptr->flags.set(Object::Object_Flags::Hidden);
 			unmark_object(OBJ_INDEX(ptr));
 		}
 
@@ -3966,7 +3947,7 @@ void CFREDView::OnShowHiddenObjects()
 
 	ptr = GET_FIRST(&obj_used_list);
 	while (ptr != END_OF_LIST(&obj_used_list)) {
-		ptr->flags &= ~OF_HIDDEN;
+		ptr->flags.remove(Object::Object_Flags::Hidden);
 		ptr = GET_NEXT(ptr);
 	}
 
@@ -4104,7 +4085,7 @@ void CFREDView::OnSetGroup(UINT nID)
 
 	objp = GET_FIRST(&obj_used_list);
 	while (objp != END_OF_LIST(&obj_used_list)) {
-		if (objp->flags & OF_MARKED) {
+		if (objp->flags[Object::Object_Flags::Marked]) {
 			if (objp->type == OBJ_SHIP) {
 				Ships[objp->instance].group |= n;
 
@@ -4120,54 +4101,6 @@ void CFREDView::OnSetGroup(UINT nID)
 			"These illegal objects you marked were not placed in the group");
 
 	Update_window = 1;
-}
-
-void CFREDView::OnInitialUpdate() 
-{
-	char *ptr, text[512];
-
-	CView::OnInitialUpdate();
-	
-	// check the time/checksum strings.
-	expire_game = 0;
-	ptr = &stamp[0];
-	if ( memcmp(ptr, DEFAULT_CHECKSUM_STRING, strlen(DEFAULT_CHECKSUM_STRING)) ) {
-		int stamped_checksum, checksum;
-
-		// the checksum is not the default checksum.  Calculate the checksum of the string
-		// and compare it.
-		memcpy(&stamped_checksum, ptr, sizeof(stamped_checksum) );
-		ptr = &stamp[0];
-		ptr += 8;			// get us to the actual string to calculate the checksum
-		CALCULATE_STAMP_CHECKSUM();
-
-		if ( checksum != stamped_checksum ){
-			expire_game = EXPIRE_BAD_CHECKSUM;
-		}
-
-		// now check the time
-		ptr = &stamp[0];
-		ptr += 4;
-		if ( memcmp( ptr, DEFAULT_TIME_STRING, strlen(DEFAULT_TIME_STRING)) ) {
-			int expire_time, current_time;
-
-			// not the default time -- check against the current time
-			memcpy( &expire_time, ptr, sizeof(expire_time) );
-			time( (time_t*)&current_time );
-			if ( current_time > expire_time )
-				expire_game = EXPIRE_BAD_TIME;
-		}
-
-		// since the default checksum has changed -- put up a message which shows who the program
-		// is stamped for
-		ptr = &stamp[0];
-		ptr += 8;
-		sprintf(text, "This version of Fred has been compiled for %s", ptr);
-		MessageBox(text, NULL, MB_OK);
-
-		if ( expire_game )
-			SetTimer(1, FRED_EXPIRE_TIME, expire_game_proc);
-	}
 }
 
 void CFREDView::OnEditorsAdjustGrid() 
@@ -4238,7 +4171,7 @@ void CFREDView::OnNextObj()
 		ptr = GET_FIRST(&obj_used_list);
 
 	if (Marked > 1) {  // cycle through marked list
-		while (!(ptr->flags & OF_MARKED))
+		while (!(ptr->flags[Object::Object_Flags::Marked]))
 		{
 			ptr = GET_NEXT(ptr);
 			if (ptr == END_OF_LIST(&obj_used_list))
@@ -4302,7 +4235,7 @@ void CFREDView::OnPrevObj()
 		i = n - 1;
 
 	if (Marked > 1) {  // cycle through marked list
-		while (!(Objects[i].flags & OF_MARKED))
+		while (!(Objects[i].flags[Object::Object_Flags::Marked]))
 		{
 			i--;
 			if (i < 0)
@@ -4662,7 +4595,6 @@ void CFREDView::OnDestroy()
 	audiostream_close();
 	snd_close();
  	gr_close();
-   	os_set_window(NULL);	 
 
 	CView::OnDestroy();
 }
@@ -4673,7 +4605,8 @@ int CFREDView::OnCreate(LPCREATESTRUCT lpCreateStruct)
 		return -1;
 	
 	MoveWindow(0,0,200,300,1);
-   	if(fred_init(this->GetSafeHwnd()) == false)
+	std::unique_ptr<os::GraphicsOperations> graphicsOperations(new MFCGraphicsOperations(this->GetSafeHwnd()));
+   	if(fred_init(std::move(graphicsOperations)) == false)
 		return -1;
 
 	return 0;

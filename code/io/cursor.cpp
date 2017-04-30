@@ -11,6 +11,8 @@
 #include "popup/popupdead.h"
 
 #include <utility>
+#include <globalincs/systemvars.h>
+#include <graphics/2d.h>
 
 namespace
 {
@@ -37,7 +39,9 @@ namespace
 #endif
 
 		SDL_Surface* bitmapSurface = SDL_CreateRGBSurface(0, w, h, 32, rmask, gmask, bmask, amask);
-		SDL_LockSurface(bitmapSurface);
+		if (SDL_LockSurface(bitmapSurface) < 0) {
+			return nullptr;
+		}
 		bitmap* bmp = bm_lock(bitmapNum, 32, BMP_TEX_XPARENT);
 
 		memcpy(bitmapSurface->pixels, reinterpret_cast<void*>(bmp->data), w * h * 4);
@@ -52,24 +56,33 @@ namespace
 
 		return cursorHandle;
 	}
+
+	void setRelativeMouseMode(bool grab) {
+		if (Cmdline_nograb) {
+			// Never grab the mouse if this is enabled
+			SDL_SetRelativeMouseMode(SDL_FALSE);
+		} else {
+			SDL_SetRelativeMouseMode(grab ? SDL_TRUE : SDL_FALSE);
+		}
+	}
 	
 	void changeMouseStatus(bool show, bool grab)
 	{
 		if (show)
 		{
 			// If shown don't grab the mouse
-			SDL_SetRelativeMouseMode(SDL_FALSE);
+			setRelativeMouseMode(false);
 			SDL_ShowCursor(1);
 		}
 		else
 		{
 			if (grab)
 			{
-				SDL_SetRelativeMouseMode(SDL_TRUE);
+				setRelativeMouseMode(true);
 			}
 			else
 			{
-				SDL_SetRelativeMouseMode(SDL_FALSE);
+				setRelativeMouseMode(false);
 			}
 
 			SDL_ShowCursor(0);
@@ -195,6 +208,8 @@ namespace io
 
 		Cursor* CursorManager::loadFromBitmap(int bitmapHandle)
 		{
+			Assertion(gr_screen.mode != GR_STUB, "Cursors can not be used with the stub renderer!");
+
 			Assertion(bm_is_valid(bitmapHandle), "%d is no valid bitmap handle!", bitmapHandle);
 
 			int nframes;
@@ -206,7 +221,13 @@ namespace io
 
 			for (int i = 0; i < nframes; ++i)
 			{
-				cursor->addFrame(bitmapToCursor(bitmapHandle + i));
+				auto sdlCursor = bitmapToCursor(bitmapHandle + i);
+				if (sdlCursor != nullptr) {
+					cursor->addFrame(sdlCursor);
+				} else {
+					// Failed to convert bitmap
+					return nullptr;
+				}
 			}
 
 			mLoadedCursors.push_back(std::move(cursor));

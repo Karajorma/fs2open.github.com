@@ -18,7 +18,6 @@
 #include "ui/ui.h"
 #include "io/key.h"
 #include "bmpman/bmpman.h"
-#include "palman/palman.h"
 #include "gamesnd/gamesnd.h"
 #include "gamesequence/gamesequence.h"
 #include "cfile/cfile.h"
@@ -231,9 +230,6 @@ void multi_pxo_strip_space(char *string1,char *string2);
 // fire up the given URL
 void multi_pxo_url(char *url);
 
-// load/set the palette
-void multi_pxo_load_palette();
-
 // unload the palette
 void multi_pxo_unload_palette();
 
@@ -419,7 +415,7 @@ int Multi_pxo_player_slider_coords[GR_NUM_RESOLUTIONS][4] = {
 		2, 219, 33, 314
 	}
 };
-char *Multi_pxo_player_slider_name[GR_NUM_RESOLUTIONS] = {
+const char *Multi_pxo_player_slider_name[GR_NUM_RESOLUTIONS] = {
 	"slider",				// GR_640
 	"2_slider"			// GR_1024
 };
@@ -552,7 +548,7 @@ int Multi_pxo_chat_slider_coords[GR_NUM_RESOLUTIONS][4] = {
 	}
 };
 
-char *Multi_pxo_chat_slider_name[GR_NUM_RESOLUTIONS] = {
+const char *Multi_pxo_chat_slider_name[GR_NUM_RESOLUTIONS] = {
 	"slider",
 	"2_slider"
 };
@@ -645,11 +641,11 @@ void multi_pxo_motd_maybe_blit();
 
 
 // common dialog stuff ------------------------------------------------
-char *Multi_pxo_com_fname[GR_NUM_RESOLUTIONS] = {
+const char *Multi_pxo_com_fname[GR_NUM_RESOLUTIONS] = {
 	"PXOPop",
 	"2_PXOPop"
 };
-char *Multi_pxo_com_mask_fname[GR_NUM_RESOLUTIONS] = {
+const char *Multi_pxo_com_mask_fname[GR_NUM_RESOLUTIONS] = {
 	"PXOPop-m",
 	"2_PXOPop-m"
 };
@@ -808,11 +804,11 @@ void multi_pxo_find_search_process();
 
 
 // player info stuff -----------------------------------------
-char *Multi_pxo_pinfo_fname[GR_NUM_RESOLUTIONS] = {
+const char *Multi_pxo_pinfo_fname[GR_NUM_RESOLUTIONS] = {
 	"PilotInfo2",
 	"2_PilotInfo2"
 };
-char *Multi_pxo_pinfo_mask_fname[GR_NUM_RESOLUTIONS] = {
+const char *Multi_pxo_pinfo_mask_fname[GR_NUM_RESOLUTIONS] = {
 	"PilotInfo2-M",
 	"2_PilotInfo2-M"
 };
@@ -924,11 +920,11 @@ void multi_pxo_notify_blit();
 
 // help screen stuff -----------------------------------------
 //XSTR:OFF
-char *Multi_pxo_help_fname[GR_NUM_RESOLUTIONS] = {
+const char *Multi_pxo_help_fname[GR_NUM_RESOLUTIONS] = {
 	"PXHelp",
 	"2_PXHelp"
 };
-char *Multi_pxo_help_mask_fname[GR_NUM_RESOLUTIONS] = {
+const char *Multi_pxo_help_mask_fname[GR_NUM_RESOLUTIONS] = {
 	"PXOHelp-M",
 	"2_PXOHelp-M"
 };
@@ -1098,9 +1094,6 @@ void multi_pxo_init(int use_last_channel)
 	// create the interface window
 	Multi_pxo_window.create(0, 0, gr_screen.max_w_unscaled, gr_screen.max_h_unscaled, 0);
 	Multi_pxo_window.set_mask_bmap(Multi_pxo_mask_fname[gr_screen.res]);
-
-	// multiplayer screen common palettes
-	multi_pxo_load_palette();	
 
 	// create the interface buttons
 	for(idx=0;idx<MULTI_PXO_NUM_BUTTONS;idx++){
@@ -1583,15 +1576,6 @@ void multi_pxo_url(char *url)
 				break;
 		}					
 	}
-#endif
-}
-
-// load/set the palette
-void multi_pxo_load_palette()
-{
-	// use the palette
-#ifndef HARDWARE_ONLY
-	palette_use_bm_palette(Multi_pxo_palette);
 #endif
 }
 
@@ -3441,7 +3425,7 @@ void multi_pxo_scroll_chat_down()
  */
 void multi_pxo_chat_process()
 {
-	char *remainder;
+	const char *remainder;
 	const char *result;
 	char msg[512];
 	int msg_pixel_width;
@@ -3456,10 +3440,10 @@ void multi_pxo_chat_process()
 	// then send the message
 	gr_get_string_size(&msg_pixel_width, NULL, msg);
 	if ( msg_pixel_width >= (Multi_pxo_input_coords[gr_screen.res][2])) {
-		remainder = strrchr(msg, ' ');
-		if ( remainder ) {
-			*remainder = '\0';
-			remainder++;
+		auto last_space = strrchr(msg, ' ');
+		if ( last_space ) {
+			*last_space = '\0';
+			remainder = last_space + 1;
 		} else {
 			remainder = "";
 		}	
@@ -3478,7 +3462,7 @@ void multi_pxo_chat_process()
 		}
 	} else if((Multi_pxo_chat_input.pressed() && (msg[0] != '\0')) || (strlen(msg) >= MAX_CHAT_LINE_LEN)) { 
 		// tack on the null terminator in the boundary case
-		int x = strlen(msg);
+		size_t x = strlen(msg);
 		if(x >= MAX_CHAT_LINE_LEN){
 			msg[MAX_CHAT_LINE_LEN-1] = '\0';
 		}		
@@ -3647,8 +3631,8 @@ void multi_pxo_motd_init()
  */
 void multi_pxo_motd_add_text(const char *text)
 {
-	int cur_len = strlen(Pxo_motd);
-	int new_len;
+	size_t cur_len = strlen(Pxo_motd);
+	size_t new_len;
 
 	// sanity
 	if(text == NULL){
@@ -4757,9 +4741,6 @@ void multi_pxo_run_medals()
 
 	// close the medals screen down
 	medal_main_close();
-	
-	// reset the palette
-	multi_pxo_load_palette();
 }
 
 

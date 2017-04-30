@@ -66,15 +66,67 @@ ENDIF(EXISTS \"${CMAKE_CURRENT_BINARY_DIR}/${TARGET}/${FILE}\")
 	SET(${OUTVAR} "${CMAKE_COMMAND}" -P ${CMAKE_CURRENT_BINARY_DIR}/${TARGET}/${NAME} PARENT_SCOPE)
 ENDFUNCTION(EP_CHECK_FILE_EXISTS)
 
-MACRO(COPY_FILES_TO_TARGET _target)
-	FOREACH(file IN LISTS TARGET_COPY_FILES)
+MACRO(COPY_FILE_TO_TARGET _target _file)
+	if(UNIX)
 		ADD_CUSTOM_COMMAND(
 			TARGET ${_target} POST_BUILD
-			COMMAND ${CMAKE_COMMAND} -E copy_if_different "${file}"  "$<TARGET_FILE_DIR:${_target}>"
-			COMMENT "copying '${file}'..."
+			COMMAND cp -a "${_file}"  "$<TARGET_FILE_DIR:${_target}>/${LIBRAY_DESTINATION}/"
+			COMMENT "copying '${_file}'..."
 		)
+	else()
+		ADD_CUSTOM_COMMAND(
+			TARGET ${_target} POST_BUILD
+			COMMAND ${CMAKE_COMMAND} -E copy_if_different "${_file}"  "$<TARGET_FILE_DIR:${_target}>/${LIBRAY_DESTINATION}/"
+			COMMENT "copying '${_file}'..."
+		)
+	endif()
+endmacro(COPY_FILE_TO_TARGET)
+
+MACRO(COPY_FILES_TO_TARGET _target)
+	if(UNIX)
+		ADD_CUSTOM_COMMAND(
+			TARGET ${_target} POST_BUILD
+			COMMAND mkdir -p "$<TARGET_FILE_DIR:${_target}>/${LIBRAY_DESTINATION}/"
+			COMMENT "Creating '$<TARGET_FILE_DIR:${_target}>/${LIBRAY_DESTINATION}/'..."
+		)
+	endif()
+	
+	FOREACH(file IN LISTS TARGET_COPY_FILES)
+		COPY_FILE_TO_TARGET("${_target}" "${file}")
 	ENDFOREACH(file)
 ENDMACRO(COPY_FILES_TO_TARGET)
+
+macro(_clear_old_libraries_state)
+	set(is_debug FALSE)
+	set(is_optimized FALSE)
+endmacro(_clear_old_libraries_state)
+
+function(CONVERT_OLD_LIBRARIES)
+	_clear_old_libraries_state()
+	set(out_list)
+	foreach(lib ${ARGV})
+		if ("${lib}" STREQUAL "debug")
+			_clear_old_libraries_state()
+			set(is_debug TRUE)
+		elseif("${lib}" STREQUAL "optimized")
+			_clear_old_libraries_state()
+			set(is_optimized TRUE)
+		elseif("${lib}" STREQUAL "general")
+			_clear_old_libraries_state()
+		else("${lib}" STREQUAL "debug")
+			# Expecting normal library
+			if(is_debug)
+				list(APPEND out_list "$<$<CONFIG:Debug>:${lib}>" "$<$<CONFIG:FastDebug>:${lib}>")
+			elseif(is_optimized)
+				list(APPEND out_list "$<$<CONFIG:Release>:${lib}>")
+			else(is_debug)
+				list(APPEND out_list "${lib}")
+			endif(is_debug)
+		endif("${lib}" STREQUAL "debug")
+	endforeach(lib)
+
+	set(CONVERTED_LIBRARIES ${out_list} PARENT_SCOPE)
+endfunction(CONVERT_OLD_LIBRARIES)
 
 macro(set_policy policy value)
 	if (POLICY ${policy})
@@ -89,28 +141,26 @@ macro(set_if_not_defined VAR VALUE)
 endmacro(set_if_not_defined)
 
 macro(configure_cotire target)
-	IF(COTIRE_ENABLE)
-		# Disable unity build as it doesn't work well for us
-		set_target_properties(${target} PROPERTIES COTIRE_ADD_UNITY_BUILD FALSE)
+	# Disable unity build as it doesn't work well for us
+	set_target_properties(${target} PROPERTIES COTIRE_ADD_UNITY_BUILD FALSE)
 
-		# add ignored paths for the precompiled header here
-		set_target_properties(code PROPERTIES COTIRE_PREFIX_HEADER_IGNORE_PATH
-			"${CMAKE_SOURCE_DIR};${CMAKE_BINARY_DIR}")
-
-		IF(DEFINED CMAKE_CONFIGURATION_TYPES)
-			cotire(${target} CONFIGURATIONS ${CMAKE_CONFIGURATION_TYPES})
-		ELSE(DEFINED CMAKE_CONFIGURATION_TYPES)
-			cotire(${target})
-		ENDIF(DEFINED CMAKE_CONFIGURATION_TYPES)
-	ENDIF(COTIRE_ENABLE)
+	cotire(${target})
 endmacro(configure_cotire)
 
 macro(add_target_copy_files)
-	INSTALL(FILES ${ARGN}
-			DESTINATION ${BINARY_DESTINATION}
-	)
+	foreach(file ${ARGN})
+		if (IS_DIRECTORY "${file}")
+			INSTALL(DIRECTORY ${file}
+					DESTINATION ${LIBRAY_DESTINATION}
+					)
+		else()
+			INSTALL(FILES ${file}
+					DESTINATION ${LIBRAY_DESTINATION}
+					)
+		endif()
 
-	SET(TARGET_COPY_FILES ${TARGET_COPY_FILES} ${ARGN} CACHE INTERNAL "" FORCE)
+		SET(TARGET_COPY_FILES ${TARGET_COPY_FILES} ${file} CACHE INTERNAL "" FORCE)
+	endforeach()
 endmacro(add_target_copy_files)
 
 function(detect_simd_instructions _out_var)
@@ -135,3 +185,13 @@ function (check_linker_flag _flag _out_var)
 	SET(CMAKE_REQUIRED_FLAGS "${_flag}")
 	CHECK_C_COMPILER_FLAG("" ${_out_var})
 endfunction(check_linker_flag)
+
+# Suppresses warnings for the specified target
+function(suppress_warnings _target)
+    if (MSVC)
+        target_compile_options(${_target} PRIVATE "/W0")
+	else()
+        # Assume everything else uses GCC style options
+		target_compile_options(${_target} PRIVATE "-w")
+    endif()
+endfunction(suppress_warnings)

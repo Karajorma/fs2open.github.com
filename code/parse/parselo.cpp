@@ -29,6 +29,7 @@
 
 #define	ERROR_LENGTH	64
 #define	RS_MAX_TRIES	5
+#define SHARP_S			(char)-33
 
 // to know that a modular table is currently being parsed
 bool	Parsing_modular_table = false;
@@ -37,7 +38,6 @@ char		Current_filename[MAX_PATH_LEN];
 char		Current_filename_save[MAX_PATH_LEN];
 char		Current_filename_sub[MAX_PATH_LEN];	//Last attempted file to load, don't know if ex or not.
 char		Error_str[ERROR_LENGTH];
-int		my_errno;
 int		Warning_count, Error_count;
 int		Warning_count_save = 0, Error_count_save = 0;
 int		fred_parse_flag = 0;
@@ -51,8 +51,8 @@ const char	*token_found;
 static int Parsing_paused = 0;
 
 // text allocation stuff
-void allocate_mission_text(int size);
-static int Mission_text_size = 0;
+void allocate_mission_text(size_t size);
+static size_t Mission_text_size = 0;
 
 
 //	Return true if this character is white space, else false.
@@ -92,32 +92,41 @@ void ignore_gray_space()
 //		 "abc \t"   becomes "abc"
 void drop_trailing_white_space(char *str)
 {
-	int	i = strlen(str) - 1;
-
-	while ((i >= 0) && is_white_space(str[i]))
-		i--;
-
-	str[i+1] = 0;
+	auto len = strlen(str);
+	if (len == 0)
+	{
+		// Nothing to do here
+		return;
+	}
+	auto i = len - 1;
+	while (i != INVALID_SIZE && is_white_space(str[i]))
+	{
+		--i;
+	}
+	str[i + 1] = '\0';
 }
 
 //	Ditto for SCP_string
 void drop_trailing_white_space(SCP_string &str)
 {
-	int i = str.length() - 1;
-
-	while ((i >= 0) && is_white_space(str[i]))
-		i--;
-
-	str.resize(i+1);
+	if (str.empty())
+	{
+		// Nothing to do here
+		return;
+	}
+	auto i = str.size() - 1;
+	while (i != INVALID_SIZE && is_white_space(str[i]))
+	{
+		--i;
+	}
+	str.resize(i + 1);
 }
 
 //	Eliminate any leading whitespace in str
 void drop_leading_white_space(char *str)
 {
-	int len, first;
-
-	len = strlen(str);
-	first = 0;
+	auto len = strlen(str);
+	size_t first = 0;
 
 	// find first non-whitespace
 	while ((first < len) && is_white_space(str[first]))
@@ -134,10 +143,8 @@ void drop_leading_white_space(char *str)
 //	Ditto for SCP_string
 void drop_leading_white_space(SCP_string &str)
 {
-	int len, first, i;
-
-	len = str.length();
-	first = 0;
+	auto len = str.length();
+	size_t first = 0;
 
 	// find first non-whitespace
 	while ((first < len) && is_white_space(str[first]))
@@ -147,72 +154,24 @@ void drop_leading_white_space(SCP_string &str)
 	if (first == 0)
 		return;
 
-	// copy chars to beginning of string
-	for (i = 0; (first + i) < len; i++)
-		str[i] = str[first + i];
-
-	// since i is now off the end of the for loop, it represents the new length
-	str.resize(i);
+	// Assign the found substring to the string
+	str = str.substr(first, len - first);
 }
 
 // eliminates all leading and trailing white space from a string.  Returns pointer passed in.
 char *drop_white_space(char *str)
 {
-	int s, e;
+	drop_trailing_white_space(str);
+	drop_leading_white_space(str);
 
-	s = 0;
-	while (str[s] && is_white_space(str[s]))
-		s++;
-
-	e = strlen(str) - 1;
-	while (e > s) {
-		if (!is_white_space(str[e]))
-			break;
-
-		e--;
-	}
-
-	if (e > s)
-		memmove(str, str + s, e - s + 1);
-
-	str[e - s + 1] = 0;
 	return str;
 }
 
 // ditto for SCP_string
 void drop_white_space(SCP_string &str)
 {
-	int len, newlen, first, last, i;
-
-	len = str.length();
-	first = 0;
-	last = len - 1;
-
-	// find first non-whitespace
-	while ((first < len) && is_white_space(str[first]))
-		first++;
-
-	// find last non-whitespace
-	while ((last > first) && is_white_space(str[last]))
-		last--;
-
-	newlen = last - first + 1;
-
-	// quick out
-	if (newlen <= 0)
-	{
-		str = "";
-		return;
-	}
-
-	if (first != 0)
-	{
-		// copy chars to beginning of string
-		for (i = 0; i < newlen; i++)
-			str[i] = str[first + i];
-	}
-
-	str.resize(newlen);
+	drop_trailing_white_space(str);
+	drop_leading_white_space(str);
 }
 
 //	Advances Mp past current token.
@@ -226,7 +185,7 @@ void skip_token()
 
 //	Display a diagnostic message if Verbose is set.
 //	(Verbose is set if -v command line switch is present.)
-void diag_printf(char *format, ...)
+void diag_printf(const char *format, ...)
 {
 #ifndef NDEBUG
 	SCP_string buffer;
@@ -305,7 +264,7 @@ int get_line_num()
 //	!0 means it's an error message.
 //	Prints line number and other useful information.
 extern int Cmdline_noparseerrors;
-void error_display(int error_level, char *format, ...)
+void error_display(int error_level, const char *format, ...)
 {
 	char type[8];
 	SCP_string error_text;
@@ -332,7 +291,7 @@ void error_display(int error_level, char *format, ...)
 }
 
 //	Advance Mp to the next eoln character.
-void advance_to_eoln(char *more_terminators)
+void advance_to_eoln(const char *more_terminators)
 {
 	char	terminators[128];
 
@@ -372,12 +331,12 @@ void advance_to_next_white()
 // Search for specified string, skipping everything up to that point.  Returns 1 if found,
 // 0 if string wasn't found (and hit end of file), or -1 if not found, but end of checking
 // block was reached.
-int skip_to_string(char *pstr, char *end)
+int skip_to_string(const char *pstr, const char *end)
 {
-	int len, len2 = 0;
-
 	ignore_white_space();
-	len = strlen(pstr);
+	auto len = strlen(pstr);
+	size_t len2 = 0;
+
 	if (end)
 		len2 = strlen(end);
 
@@ -401,12 +360,11 @@ int skip_to_string(char *pstr, char *end)
 
 // Goober5000
 // Advance to start of pstr.  Return 0 is successful, otherwise return !0
-int skip_to_start_of_string(char *pstr, char *end)
+int skip_to_start_of_string(const char *pstr, const char *end)
 {
-	int len, endlen;
-
 	ignore_white_space();
-	len = strlen(pstr);
+	auto len = strlen(pstr);
+	size_t endlen;
 	if(end)
 		endlen = strlen(end);
 	else
@@ -430,9 +388,9 @@ int skip_to_start_of_string(char *pstr, char *end)
 }
 
 // Advance to start of either pstr1 or pstr2.  Return 0 is successful, otherwise return !0
-int skip_to_start_of_string_either(char *pstr1, char *pstr2, char *end)
+int skip_to_start_of_string_either(const char *pstr1, const char *pstr2, const char *end)
 {
-	int len1, len2, endlen;
+	size_t len1, len2, endlen;
 
 	ignore_white_space();
 	len1 = strlen(pstr1);
@@ -489,14 +447,19 @@ int required_string(const char *pstr)
 	return 1;
 }
 
-int check_for_eof()
+int check_for_eof_raw()
 {
-	ignore_white_space();
-
 	if (*Mp == EOF_CHAR)
 		return 1;
 
 	return 0;
+}
+
+int check_for_eof()
+{
+	ignore_white_space();
+
+	return check_for_eof_raw();
 }
 
 /**
@@ -548,7 +511,7 @@ int optional_string(const char *pstr)
 	return 0;
 }
 
-int optional_string_either(char *str1, char *str2)
+int optional_string_either(const char *str1, const char *str2)
 {
 	ignore_white_space();
 
@@ -670,7 +633,7 @@ int optional_string_fred(char *pstr, char *end, char *end2)
  * @details Advances the Mp until a string is found or exceeds RS_MAX_TRIES. Once a string is found, Mp is located at
  * the start of the found string.
  */
-int required_string_either(char *str1, char *str2)
+int required_string_either(const char *str1, const char *str2)
 {
 	ignore_white_space();
 
@@ -754,7 +717,7 @@ int required_string_one_of(int arg_count, ...)
 	return -1;
 }
 
-int required_string_either_fred(char *str1, char *str2)
+int required_string_either_fred(const char *str1, const char *str2)
 {
 	ignore_white_space();
 
@@ -782,7 +745,7 @@ int required_string_either_fred(char *str1, char *str2)
 
 //	Copy characters from instr to outstr until eoln is found, or until max
 //	characters have been copied (including terminator).
-void copy_to_eoln(char *outstr, char *more_terminators, char *instr, int max)
+void copy_to_eoln(char *outstr, const char *more_terminators, const char *instr, int max)
 {
 	int	count = 0;
 	char	ch;
@@ -804,13 +767,13 @@ void copy_to_eoln(char *outstr, char *more_terminators, char *instr, int max)
 	}
 
 	if (count >= max)
-		error_display(0, "Token too long: [%s].  Length = %i.  Max is %i.\n", next_tokens(), strlen(next_tokens()), max);
+		error_display(0, "Token too long: [%s].  Length = " SIZE_T_ARG ".  Max is %i.\n", next_tokens(), strlen(next_tokens()), max);
 
 	*outstr = 0;
 }
 
 //	Ditto for SCP_string.
-void copy_to_eoln(SCP_string &outstr, char *more_terminators, char *instr)
+void copy_to_eoln(SCP_string &outstr, const char *more_terminators, const char *instr)
 {
 	char	ch;
 	char	terminators[128];
@@ -856,7 +819,7 @@ void copy_to_next_white(char *outstr, char *instr, int max)
 	}
 
 	if (count >= max)
-		error_display(0, "Token too long: [%s].  Length = %i.  Max is %i.\n", next_tokens(), strlen(next_tokens()), max);
+		error_display(0, "Token too long: [%s].  Length = " SIZE_T_ARG ".  Max is %i.\n", next_tokens(), strlen(next_tokens()), max);
 
 	*outstr = 0;
 }
@@ -919,7 +882,7 @@ char* alloc_text_until(char* instr, char* endstr)
 //	Copy text until a certain string is matched.
 //	For example, this is used to copy mission notes, scanning until $END NOTES:
 // is found.
-void copy_text_until(char *outstr, char *instr, char *endstr, int max_chars)
+void copy_text_until(char *outstr, char *instr, const char *endstr, int max_chars)
 {
 	char *foundstr;
 	Assert(outstr && instr && endstr);
@@ -946,7 +909,7 @@ void copy_text_until(char *outstr, char *instr, char *endstr, int max_chars)
 }
 
 //	Ditto for SCP_string.
-void copy_text_until(SCP_string &outstr, char *instr, char *endstr)
+void copy_text_until(SCP_string &outstr, char *instr, const char *endstr)
 {
 	char *foundstr;
 	Assert(instr && endstr);
@@ -984,7 +947,7 @@ void stuff_string_white(SCP_string &outstr)
 }
 
 // Goober5000
-void stuff_string_until(char *outstr, char *endstr, int len)
+void stuff_string_until(char *outstr, const char *endstr, int len)
 {
 	if(!len)
 		len = NAME_LENGTH-1;
@@ -996,7 +959,7 @@ void stuff_string_until(char *outstr, char *endstr, int len)
 }
 
 // Goober5000
-void stuff_string_until(SCP_string &outstr, char *endstr)
+void stuff_string_until(SCP_string &outstr, const char *endstr)
 {
 	ignore_gray_space();
 	copy_text_until(outstr, Mp, endstr);
@@ -1010,15 +973,15 @@ void stuff_string_until(SCP_string &outstr, char *endstr)
 //or NULL on failure
 //Does depth checks for the start and end strings
 //extra_chars indicates extra malloc space that should be allocated.
-char* alloc_block(char* startstr, char* endstr, int extra_chars)
+char* alloc_block(const char* startstr, const char* endstr, int extra_chars)
 {
 	Assert(startstr != NULL && endstr != NULL);
 	Assert(stricmp(startstr, endstr));
 
 	char* rval = NULL;
-	uint elen = strlen(endstr);
-	uint slen = strlen(startstr);
-	uint flen = 0;
+	auto elen = strlen(endstr);
+	auto slen = strlen(startstr);
+	size_t flen = 0;
 
 	//Skip the opening thing and any extra stuff
 	required_string(startstr);
@@ -1155,18 +1118,16 @@ int get_string_or_variable (SCP_string &str)
  */
 int get_string(char *str, int max)
 {
-	int	len;
+	auto len = strcspn(Mp + 1, "\"");
 
-	len = strcspn(Mp + 1, "\"");
-
-	if (max >= 0 && len >= max)
-		error_display(0, "String too long.  Length = %i.  Max is %i.\n", len, max);
+	if (max >= 0 && len >= (size_t)max)
+		error_display(0, "String too long.  Length = " SIZE_T_ARG ".  Max is %i.\n", len, max);
 
 	strncpy(str, Mp + 1, len);
 	str[len] = 0;
 
 	Mp += len + 2;
-	return len;
+	return (int)len;
 }
 
 /**
@@ -1174,9 +1135,7 @@ int get_string(char *str, int max)
  */
 void get_string(SCP_string &str)
 {
-	int len;
-
-	len = strcspn(Mp + 1, "\"");
+	auto len = strcspn(Mp + 1, "\"");
 	str.assign(Mp + 1, len);
 
 	Mp += len + 2;
@@ -1185,7 +1144,7 @@ void get_string(SCP_string &str)
 //	Stuff a string into a string buffer.
 //	Supports various FreeSpace primitive types.  If 'len' is supplied, it will override
 // the default string length if using the F_NAME case.
-void stuff_string(char *outstr, int type, int len, char *terminators)
+void stuff_string(char *outstr, int type, int len, const char *terminators)
 {
 	char read_str[PARSE_BUF_SIZE] = "";
 	int read_len = PARSE_BUF_SIZE;
@@ -1262,7 +1221,7 @@ void stuff_string(char *outstr, int type, int len, char *terminators)
 	else
 	{
 		if ( strlen(read_str) > (uint)final_len )
-			error_display(0, "Token too long: [%s].  Length = %i.  Max is %i.\n", read_str, strlen(read_str), final_len);
+			error_display(0, "Token too long: [%s].  Length = " SIZE_T_ARG ".  Max is %i.\n", read_str, strlen(read_str), final_len);
 
 		strncpy(outstr, read_str, final_len);
 	}
@@ -1272,7 +1231,7 @@ void stuff_string(char *outstr, int type, int len, char *terminators)
 
 //	Stuff a string into a string buffer.
 //	Supports various FreeSpace primitive types.
-void stuff_string(SCP_string &outstr, int type, char *terminators)
+void stuff_string(SCP_string &outstr, int type, const char *terminators)
 {
 	SCP_string read_str;
 	int tag_id;
@@ -1436,9 +1395,9 @@ void stuff_malloc_string(char **dest, int type, char *terminators)
 //
 void compact_multitext_string(char *str)
 {
-	unsigned int i;
-	unsigned int len = strlen(str);
-	int num_cr = 0;
+	size_t i;
+	size_t len = strlen(str);
+	size_t num_cr = 0;
 
 	for (i=0; i<len; i++)
 	{
@@ -1460,9 +1419,9 @@ void compact_multitext_string(char *str)
 // ditto for SCP_string
 void compact_multitext_string(SCP_string &str)
 {
-	unsigned int i;
-	unsigned int len = str.length();
-	int num_cr = 0;
+	size_t i;
+	size_t len = str.length();
+	size_t num_cr = 0;
 
 	for (i=0; i<len; i++)
 	{
@@ -1707,30 +1666,94 @@ int maybe_convert_foreign_character(int ch)
 }
 
 // Goober5000
-void maybe_convert_foreign_characters(char *line)
+// Yarn - The capacity of out must be at least the value returned by
+// get_converted_string_length(in) (plus one if add_null is true).
+// Returns the number of characters written to out.
+size_t maybe_convert_foreign_characters(const char *in, char *out, bool add_null)
 {
-	char *ch;
-	if (Fred_running)
-		return;
+	if (Fred_running) {
+		size_t len = strlen(in);
 
-	if (Lcl_pl)
-		return;
+		if (add_null) {
+			strcpy(out, in);
+			return len + 1;
+		} else {
+			strncpy(out, in, len);
+			return len;
+		}
+	} else {
+		auto inp = in;
+		auto outp = out;
 
-	for (ch = line; *ch != '\0'; ch++)
-			*ch = (char) maybe_convert_foreign_character(*ch);
+		while (*inp != '\0') {
+			if (*inp == SHARP_S) {
+				*outp++ = 's';
+				*outp++ = 's';
+			} else if (Lcl_pl) {
+				*outp++ = *inp;
+			} else {
+				*outp++ = (char) maybe_convert_foreign_character(*inp);
+			}
+			inp++;
+		}
+
+		if (add_null) {
+			*outp++ = '\0';
+		}
+
+		return outp - out;
+	}
 }
 
 // Goober5000
-void maybe_convert_foreign_characters(SCP_string &line)
+void maybe_convert_foreign_characters(SCP_string &text)
 {
-	if (Fred_running)
-		return;
+	if (!Fred_running) {
+		for (SCP_string::iterator ii = text.begin(); ii != text.end(); ++ii) {
+			text.reserve(get_converted_string_length(text));
 
-	if (Lcl_pl)
-		return;
+			if (*ii == SHARP_S) {
+				text.replace(ii, ii + 1, "ss");
+				++ii;
+			} else if (!Lcl_pl) {
+				*ii = (char) maybe_convert_foreign_character(*ii);
+			}
+		}
+	}
+}
 
-	for (SCP_string::iterator ii = line.begin(); ii != line.end(); ++ii)
-		*ii = (char) maybe_convert_foreign_character(*ii);
+// Yarn - Returns what the length of the text will be after it's processed by
+// maybe_convert_foreign_characters, not including the null terminator.
+size_t get_converted_string_length(const char *text)
+{
+	if (Fred_running) {
+		return strlen(text);
+	} else {
+		size_t count = 0;
+		auto s = strchr(text, SHARP_S);
+		while (s != nullptr) {
+			count++;
+			s = strchr(s + 1, SHARP_S);
+		}
+		return strlen(text) + count;
+	}
+}
+
+// Yarn - Returns what the length of the text will be after it's processed by
+// maybe_convert_foreign_characters.
+size_t get_converted_string_length(const SCP_string &text)
+{
+	if (Fred_running) {
+		return text.size();
+	} else {
+		size_t count = 0;
+		for (auto ii = text.begin(); ii != text.end(); ++ii) {
+			if (*ii == SHARP_S) {
+				count++;
+			}
+		}
+		return text.size() + count;
+	}
 }
 
 // Goober5000
@@ -1829,7 +1852,7 @@ bool matches_version_specific_tag(const char *line_start, bool &compatible_versi
 	Assertion((*ch) == ';', "String that was guaranteed to have double semicolons did not; it's possible we have fallen into an alternate universe. Failing string: [%s]\n", line_start);
 	ch++;
 
-	tag_len = ch - line_start;
+	tag_len = (int)(ch - line_start);
 	compatible_version = true;
 
 	// check whether major, minor, and build line up with this version
@@ -2029,7 +2052,7 @@ void read_file_text_from_default(const default_file& file, char *processed_text,
 	}
 
 	// make sure to do this before anything else
-	allocate_mission_text(static_cast<int>(file.size + 1));
+	allocate_mission_text(file.size + 1);
 
 	// if we have no raw buffer, set it as the default raw text area
 	if (raw_text == NULL)
@@ -2091,13 +2114,19 @@ void stop_parse()
 	Mission_text_size = 0;
 }
 
-void allocate_mission_text(int size)
+void allocate_mission_text(size_t size)
 {
 	Assert( size > 0 );
 
-	if (size <= Mission_text_size)
-		return;
+	// Make sure that there is space for the terminating null character
+	size += 1;
 
+	if (size <= Mission_text_size) {
+		// Make sure that a new parsing session does not use uninitialized data.
+		memset( Mission_text, 0, sizeof(char) * Mission_text_size );
+		memset( Mission_text_raw, 0, sizeof(char) * Mission_text_size);
+		return;
+	}
 
 	static ubyte parse_atexit = 0;
 
@@ -2153,12 +2182,12 @@ void read_raw_file_text(const char *filename, int mode, char *raw_text)
         throw parse::ParseException("Failed to open file");
 	}
 
-	// allocate, or reallocate, memory for Mission_text and Mission_text_raw based on size we need now
-	allocate_mission_text( file_len + 1 );
-
-	// NOTE: this always has to be done *after* the allocate_mission_text() call!!
-	if (raw_text == NULL)
+	if (raw_text == nullptr) {
+		// allocate, or reallocate, memory for Mission_text and Mission_text_raw based on size we need now
+		allocate_mission_text((size_t) (file_len + 1));
+		// NOTE: this always has to be done *after* the allocate_mission_text() call!!
 		raw_text = Mission_text_raw;
+	}
 
 	// read first 10 bytes to determine if file is encrypted
 	cfread(raw_text, MIN(file_len, 10), 1, mf);
@@ -2201,11 +2230,11 @@ void process_raw_file_text(char *processed_text, char *raw_text)
 {
 	char	*mp;
 	char	*mp_raw;
-	char outbuf[PARSE_BUF_SIZE], *str;
+	char outbuf[PARSE_BUF_SIZE];
 	bool in_quote = false;
 	bool in_multiline_comment_a = false;
 	bool in_multiline_comment_b = false;
-	int raw_text_len = strlen(raw_text);
+	int raw_text_len = (int)strlen(raw_text);
 
 	if (processed_text == NULL)
 		processed_text = Mission_text;
@@ -2243,19 +2272,7 @@ void process_raw_file_text(char *processed_text, char *raw_text)
 
 		strip_comments(outbuf, in_quote, in_multiline_comment_a, in_multiline_comment_b);
 
-		maybe_convert_foreign_characters(outbuf);
-
-		str = outbuf;
-		while (*str) {
-			if (*str == (Lcl_pl ? -33 : -31)) {
-				*mp++ = 's';
-				*mp++ = 's';
-				str++;
-
-			} else {
-				*mp++ = *str++;
-			}
-		}
+		mp += maybe_convert_foreign_characters(outbuf, mp, false);
 
 //		strcpy_s(mp, outbuf);
 //		mp += strlen(outbuf);
@@ -2292,50 +2309,58 @@ void debug_show_mission_text()
 		printf("%c", ch);
 }
 
-float atof2()
+static bool atof2(float *out)
 {
-	char	ch;
-
-	my_errno = 0;
 	ignore_white_space();
-
-	ch = *Mp;
+	char ch = *Mp;
 
 	if ((ch != '.') && (ch != '-') && (ch != '+') && ((ch < '0') || (ch > '9'))) {
 		error_display(1, "Expecting float, found [%.32s].\n", next_tokens());
-		my_errno = 1;
-		return 0.0f;
-	} else
-		return (float)atof(Mp);
+		*out = 0.0f;
+		return false;
+	}
 
+	*out = (float) atof(Mp);
+	return true;
 }
 
-int atoi2()
+static bool atoi2(int *out)
 {
-	char	ch;
-
-	my_errno = 0;
-
 	ignore_white_space();
-
-	ch = *Mp;
+	char ch = *Mp;
 
 	if ((ch != '-') && (ch != '+') && ((ch < '0') || (ch > '9'))) {
 		error_display(1, "Expecting int, found [%.32s].\n", next_tokens());
-		my_errno = 1;
-		return 0;
-	} else
-		return atoi(Mp);
+		*out = 0;
+		return false;
+	}
 
+	*out = atoi(Mp);
+	return true;
+}
+
+bool atol2(long *out)
+{
+    ignore_white_space();
+    char ch = *Mp;
+
+    if ((ch != '-') && (ch != '+') && ((ch < '0') || (ch > '9'))) {
+        error_display(1, "Expecting long, found [%.32s].\n", next_tokens());
+        *out = 0;
+        return false;
+    }
+
+    *out = atol(Mp);
+    return true;
 }
 
 //	Stuff a floating point value pointed at by Mp.
 //	Advances past float characters.
 void stuff_float(float *f)
 {
-	*f = atof2();
+	bool success = atof2(f);
 
-	if (my_errno)
+	if (!success)
 		skip_token();
 	else
 		Mp += strspn(Mp, "+-0123456789.");
@@ -2348,13 +2373,12 @@ void stuff_float(float *f)
 
 int stuff_float_optional(float *f, bool raw)
 {
-	int skip_len;
 	bool comma = false;
 
 	if (!raw)
 		ignore_white_space();
 
-	skip_len = strspn(Mp, "+-0123456789.");
+	auto skip_len = strspn(Mp, "+-0123456789.");
 	if(*(Mp+skip_len) == ',') {
 		comma = true;
 	}
@@ -2377,9 +2401,9 @@ int stuff_float_optional(float *f, bool raw)
 //	Advances past integer characters.
 void stuff_int(int *i)
 {
-	*i = atoi2();
+	bool success = atoi2(i);
 
-	if (my_errno)
+	if (!success)
 		skip_token();
 	else
 		Mp += strspn(Mp, "+-0123456789");
@@ -2392,13 +2416,12 @@ void stuff_int(int *i)
 
 int stuff_int_optional(int *i, bool raw)
 {
-	int skip_len;
 	bool comma = false;
 
 	if (!raw)
 		ignore_white_space();
 
-	skip_len = strspn(Mp, "+-0123456789");
+	auto skip_len = strspn(Mp, "+-0123456789");
 	if(*(Mp+skip_len) == ',') {
 		comma = true;
 	}
@@ -2651,13 +2674,12 @@ int stuff_bool_list(bool *blp, int max_bools)
 //	Advances past integer characters.
 void stuff_ubyte(ubyte *i)
 {
-	int	temp;
-
-	temp = atoi2();
+	int temp;
+	bool success = atoi2(&temp);
 
 	*i = (ubyte)temp;
 
-	if (my_errno)
+	if (!success)
 		skip_token();
 	else
 		Mp += strspn(Mp, "+-0123456789");
@@ -2724,7 +2746,7 @@ int stuff_string_list(SCP_vector<SCP_string>& slp)
 
 	Mp++;
 
-	return slp.size();
+	return (int)(slp.size());
 }
 
 // Stuffs a list of strings
@@ -2950,12 +2972,12 @@ int stuff_loadout_list (int *ilp, int max_ints, int lookup_type)
 		}
 
 		// similarly, complain if this is a valid ship or weapon class that the player can't use
-		if ((lookup_type == MISSION_LOADOUT_SHIP_LIST) && (!(Ship_info[index].flags & SIF_PLAYER_SHIP)) ) {
+		if ((lookup_type == MISSION_LOADOUT_SHIP_LIST) && (!(Ship_info[index].flags[Ship::Info_Flags::Player_ship])) ) {
 			clean_loadout_list_entry();
 			Warning(LOCATION, "Ship type \"%s\" found in loadout of mission file. This class is not marked as a player ship...skipping", str);
 			continue;
 		}
-		else if ((lookup_type == MISSION_LOADOUT_WEAPON_LIST) && (!(Weapon_info[index].wi_flags & WIF_PLAYER_ALLOWED)) ) {
+		else if ((lookup_type == MISSION_LOADOUT_WEAPON_LIST) && (!(Weapon_info[index].wi_flags[Weapon::Info_Flags::Player_allowed])) ) {
 			clean_loadout_list_entry();
 			nprintf(("Warning",  "Warning: Weapon type %s found in loadout of mission file. This class is not marked as a player allowed weapon...skipping\n", str));
 			if ( !Is_standalone )
@@ -2991,9 +3013,9 @@ int stuff_loadout_list (int *ilp, int max_ints, int lookup_type)
 }
 
 //Stuffs an integer list like stuff_int_list.
-int stuff_float_list(float* flp, int max_floats)
+size_t stuff_float_list(float* flp, size_t max_floats)
 {
-	int count = 0;
+	size_t count = 0;
 	ignore_white_space();
 
 	if (*Mp != '(') {
@@ -3173,7 +3195,7 @@ int stuff_vec3d_list(SCP_vector<vec3d> &vec_list)
 
 	Mp++;
 
-	return vec_list.size();
+	return (int)vec_list.size();
 }
 
 //	Stuff a matrix, which is 3 vec3ds.
@@ -3184,21 +3206,22 @@ void stuff_matrix(matrix *mp)
 	stuff_vec3d(&mp->vec.fvec);
 }
 
-
-//	Given a string, find it in a string array.
-//	*description is only used for diagnostics in case it can't be found.
-//	*str1 is the string to be found.
-//	*strlist is the list of strings to search.
-//	max is the number of entries in *strlist to scan.
-int string_lookup(char *str1, char *strlist[], int max, char *description, int say_errors)
-{
-	int	i;
-
-	for (i=0; i<max; i++) {
+/**
+ * @brief Given a string, find it in a string array.
+ *
+ * @param str1 is the string to be found.
+ * @param strlist is the list of strings to search.
+ * @param max is the number of entries in *strlist to scan.
+ * @param description is only used for diagnostics in case it can't be found.
+ * @param say_errors @c true if errors should be reported
+ * @return
+ */
+int string_lookup(const char *str1, const char* const *strlist, size_t max, const char *description, bool say_errors) {
+	for (size_t i=0; i<max; i++) {
 		Assert(strlen(strlist[i]) != 0); //-V805
 
 		if (!stricmp(str1, strlist[i]))
-			return i;
+			return (int)i;
 	}
 
 	if (say_errors)
@@ -3210,7 +3233,7 @@ int string_lookup(char *str1, char *strlist[], int max, char *description, int s
 //	Find a required string (*id), then stuff the text of type f_type that
 // follows it at *addr.  *strlist[] contains the strings it should try to
 // match.
-void find_and_stuff(char *id, int *addr, int f_type, char *strlist[], int max, char *description)
+void find_and_stuff(const char *id, int *addr, int f_type, const char *strlist[], size_t max, const char *description)
 {
 	char	token[128];
 	int checking_ship_classes = (stricmp(id, "$class:") == 0);
@@ -3232,7 +3255,7 @@ void find_and_stuff(char *id, int *addr, int f_type, char *strlist[], int max, c
 	}
 }
 
-void find_and_stuff_optional(char *id, int *addr, int f_type, char *strlist[], int max, char *description)
+void find_and_stuff_optional(const char *id, int *addr, int f_type, const char * const *strlist, size_t max, const char *description)
 {
 	char token[128];
 
@@ -3246,7 +3269,7 @@ void find_and_stuff_optional(char *id, int *addr, int f_type, char *strlist[], i
 //	Mp points at a string.
 //	Find the string in the list of strings *strlist[].
 // Returns the index of the match, -1 if none.
-int match_and_stuff(int f_type, char *strlist[], int max, char *description)
+int match_and_stuff(int f_type, const char * const *strlist, int max, const char *description)
 {
 	char	token[128];
 
@@ -3254,8 +3277,8 @@ int match_and_stuff(int f_type, char *strlist[], int max, char *description)
 	return string_lookup(token, strlist, max, description, 0);
 }
 
-void find_and_stuff_or_add(char *id, int *addr, int f_type, char *strlist[], int *total,
-	int max, char *description)
+void find_and_stuff_or_add(const char *id, int *addr, int f_type, char *strlist[], int *total,
+	int max, const char *description)
 {
 	char	token[128];
 
@@ -3346,7 +3369,7 @@ char *split_str_once(char *src, int max_pixel_w)
 		return NULL;  // string doesn't require a cut
 	}
 
-	len = strlen(src);
+	len = (int)strlen(src);
 	for (i=0; i<len; i++) {
 		gr_get_string_size(&w, NULL, src, i);
 		if ( w > max_pixel_w )
@@ -3467,7 +3490,7 @@ int split_str(const char *src, int max_pixel_w, int *n_chars, const char **p_str
 
 		// if we have a newline, split the line here
 		if (*src == '\n') {
-			n_chars[line_num] = src - p_str[line_num];  // track length of line
+			n_chars[line_num] = (int)(src - p_str[line_num]);  // track length of line
 			line_num++;
 			if (line_num < max_lines) {
 				p_str[line_num] = NULL;
@@ -3514,7 +3537,7 @@ int split_str(const char *src, int max_pixel_w, int *n_chars, const char **p_str
 				src--;  // reuse this character in next line
 			}
 
-			n_chars[line_num] = end - p_str[line_num];  // track length of line
+			n_chars[line_num] = (int)(end - p_str[line_num]);  // track length of line
 			Assert(n_chars[line_num]);
 			line_num++;
 			if (line_num < max_lines) {
@@ -3529,7 +3552,7 @@ int split_str(const char *src, int max_pixel_w, int *n_chars, const char **p_str
 	}	// end for
 
 	if (!new_line && p_str[line_num]) {
-		n_chars[line_num] = src - p_str[line_num];  // track length of line
+		n_chars[line_num] = (int)(src - p_str[line_num]);  // track length of line
 		Assert(n_chars[line_num]);
 		line_num++;
 	}
@@ -3585,7 +3608,7 @@ int split_str(const char *src, int max_pixel_w, SCP_vector<int> &n_chars, SCP_ve
 
 		// if we have a newline, split the line here
 		if (*src == '\n') {
-			n_chars.push_back(src - p_str.at(line_num));  // track length of line
+			n_chars.push_back((int)(src - p_str.at(line_num)));  // track length of line
 			line_num++;
 			new_line = 1;
 
@@ -3629,7 +3652,7 @@ int split_str(const char *src, int max_pixel_w, SCP_vector<int> &n_chars, SCP_ve
 				src--;  // reuse this character in next line
 			}
 
-			n_chars.push_back(end - p_str.at(line_num));  // track length of line
+			n_chars.push_back((int)(end - p_str.at(line_num)));  // track length of line
 			Assert(n_chars.at(line_num));
 			line_num++;
 			new_line = 1;
@@ -3641,7 +3664,7 @@ int split_str(const char *src, int max_pixel_w, SCP_vector<int> &n_chars, SCP_ve
 	}	// end for
 
 	if (!new_line && p_str.at(line_num)) {
-		n_chars.push_back(src - p_str.at(line_num));  // track length of line
+		n_chars.push_back((int)(src - p_str.at(line_num)));  // track length of line
 		Assert(n_chars.at(line_num));
 		line_num++;
 	}
@@ -3660,8 +3683,8 @@ int subsystem_stricmp(const char *str1, const char *str2)
 		return stricmp(str1, str2);
 
 	// calc lengths
-	int len1 = strlen(str1);
-	int len2 = strlen(str2);
+	auto len1 = (int)strlen(str1);
+	auto len2 = (int)strlen(str2);
 
 	// get rid of trailing s on s1?
 	if (tolower(*(str1+len1-1) == 's'))
@@ -3888,11 +3911,11 @@ const char *get_pointer_to_first_hash_symbol(const char *src)
 int get_index_of_first_hash_symbol(SCP_string &src)
 {
 	size_t pos = src.find('#');
-	return (pos == SCP_string::npos) ? -1 : pos;
+	return (pos == SCP_string::npos) ? -1 : (int)pos;
 }
 
 // Goober5000
-int replace_one(char *str, char *oldstr, char *newstr, uint max_len, int range)
+ptrdiff_t replace_one(char *str, const char *oldstr, const char *newstr, size_t max_len, ptrdiff_t range)
 {
 	Assert(str && oldstr && newstr);
 
@@ -3944,9 +3967,9 @@ int replace_one(char *str, char *oldstr, char *newstr, uint max_len, int range)
 }
 
 // Goober5000
-int replace_all(char *str, char *oldstr, char *newstr, uint max_len, int range)
+ptrdiff_t replace_all(char *str, const char *oldstr, const char *newstr, size_t max_len, ptrdiff_t range)
 {
-	int val, tally = 0;
+	ptrdiff_t val, tally = 0;
 
 	while ((val = replace_one(str, oldstr, newstr, max_len, range)) > 0)
 	{
@@ -4102,7 +4125,7 @@ void format_integer_with_commas(char *buf, int integer, bool use_comma_with_four
 	// scan the string backwards, writing commas after every third digit
 	new_pos = 0;
 	triad_count = 0;
-	for (old_pos = strlen(buf) - 1; old_pos >= 0; old_pos--)
+	for (old_pos = (int)strlen(buf) - 1; old_pos >= 0; old_pos--)
 	{
 		backward_buf[new_pos] = buf[old_pos];
 		new_pos++;
@@ -4119,7 +4142,7 @@ void format_integer_with_commas(char *buf, int integer, bool use_comma_with_four
 
 	// now reverse the string
 	new_pos = 0;
-	for (old_pos = strlen(backward_buf) - 1; old_pos >= 0; old_pos--)
+	for (old_pos = (int)strlen(backward_buf) - 1; old_pos >= 0; old_pos--)
 	{
 		buf[new_pos] = backward_buf[old_pos];
 		new_pos++;

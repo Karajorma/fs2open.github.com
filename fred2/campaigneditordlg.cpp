@@ -130,7 +130,7 @@ void campaign_editor::OnUpdate(CView* pSender, LPARAM lHint, CObject* pHint)
 void campaign_editor::OnLoad() 
 {
 	char buf[512];
-	int size, offset;
+	size_t size, offset;
 
 	if (Cur_campaign_mission < 0){
 		return;
@@ -466,7 +466,7 @@ void campaign_editor::OnSelchangedSexpTree(NMHDR* pNMHDR, LRESULT* pResult)
 	}
 
 	// get identifier of parent
-	node = m_tree.GetItemData(h);
+	node = (int)m_tree.GetItemData(h);
 	for (i=0; i<Total_links; i++){
 		if ((Links[i].from == Cur_campaign_mission) && (Links[i].node == node)){
 			break;

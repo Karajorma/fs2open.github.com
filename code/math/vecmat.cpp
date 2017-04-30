@@ -22,14 +22,13 @@
 #define	CONVERT_RADIANS	0.017453		// conversion factor from degrees to radians
 
 vec3d vmd_zero_vector = ZERO_VECTOR;
+vec3d vmd_scale_identity_vector = SCALE_IDENTITY_VECTOR;
 vec3d vmd_x_vector = { { { 1.0f, 0.0f, 0.0f } } };
 vec3d vmd_y_vector = { { { 0.0f, 1.0f, 0.0f } } };
 vec3d vmd_z_vector = { { { 0.0f, 0.0f, 1.0f } } };
 matrix vmd_identity_matrix = IDENTITY_MATRIX;
 
 #define	UNINITIALIZED_VALUE	-12345678.9f
-
-static void rotate_z ( matrix *m, float theta ) __UNUSED;
 
 bool vm_vec_equal(const vec4 &self, const vec4 &other)
 {
@@ -252,6 +251,14 @@ void vm_vec_scale(vec3d *dest, float s)
 	dest->xyz.z = dest->xyz.z * s;
 }
 
+//scales a 4-component vector in place.
+void vm_vec_scale(vec4 *dest, float s)
+{
+	dest->xyzw.x = dest->xyzw.x * s;
+	dest->xyzw.y = dest->xyzw.y * s;
+	dest->xyzw.z = dest->xyzw.z * s;
+	dest->xyzw.w = dest->xyzw.w * s;
+}
 
 //scales and copies a vector.
 void vm_vec_copy_scale(vec3d *dest, const vec3d *src, float s)
@@ -372,20 +379,9 @@ float vm_vec_mag_quick(const vec3d *v)
 {
 	float a,b,c,bc, t;
 
-	if ( v->xyz.x < 0.0 )
-		a = -v->xyz.x;
-	else
-		a = v->xyz.x;
-
-	if ( v->xyz.y < 0.0 )
-		b = -v->xyz.y;
-	else
-		b = v->xyz.y;
-
-	if ( v->xyz.z < 0.0 )
-		c = -v->xyz.z;
-	else
-		c = v->xyz.z;
+	a = fl_abs(v->xyz.x);
+	b = fl_abs(v->xyz.y);
+	c = fl_abs(v->xyz.z);
 
 	if (a < b) {
 		t = a;
@@ -565,26 +561,6 @@ float vm_vec_copy_normalize_quick_mag(vec3d *dest, const vec3d *src)
 
 }
 
-//normalize a vector. returns mag of source vec. uses approx mag
-float vm_vec_normalize_quick_mag(vec3d *v)
-{
-//	return vm_vec_normalize(v);
-	float m;
-
-	m = vm_vec_mag_quick(v);
-
-	Assert(m > 0.0f);
-
-	v->xyz.x = v->xyz.x*m;
-	v->xyz.y = v->xyz.y*m;
-	v->xyz.z = v->xyz.z*m;
-
-	return m;
-
-}
-
-
-
 //return the normalized direction vector between two points
 //dest = normalized(end - start).  Returns mag of direction vector
 //NOTE: the order of the parameters matches the vector subtraction
@@ -606,18 +582,6 @@ float vm_vec_normalized_dir_quick(vec3d *dest, const vec3d *end, const vec3d *st
 	vm_vec_sub(dest,end,start);
 
 	return vm_vec_normalize_quick(dest);
-}
-
-//return the normalized direction vector between two points
-//dest = normalized(end - start).  Returns mag of direction vector
-//NOTE: the order of the parameters matches the vector subtraction
-float vm_vec_normalized_dir_quick_mag(vec3d *dest, const vec3d *end, const vec3d *start)
-{
-	float t;
-	vm_vec_sub(dest,end,start);
-
-	t = vm_vec_normalize_quick_mag(dest);
-	return t;
 }
 
 //computes surface normal from three points. result is normalized
@@ -651,14 +615,28 @@ vec3d *vm_vec_cross(vec3d *dest, const vec3d *src0, const vec3d *src1)
 	return dest;
 }
 
-// test if 2 vectors are parallel or not.
 int vm_test_parallel(const vec3d *src0, const vec3d *src1)
 {
-	if ( (fl_abs(src0->xyz.x - src1->xyz.x) < 1e-4) && (fl_abs(src0->xyz.y - src1->xyz.y) < 1e-4) && (fl_abs(src0->xyz.z - src1->xyz.z) < 1e-4) ) {
-		return 1;
-	} else {
-		return 0;
-	}
+	vec3d partial1;
+	vec3d partial2;
+
+	/*
+	 * To test if two vectors are parallel, calculate their cross product.
+	 * If the result is zero, then the vectors are parallel. It is better
+	 * to compare the two cross product "partials" (for lack of a better
+	 * word) against each other instead of the final cross product against
+	 * zero.
+	 */
+
+	partial1.xyz.x = (src0->xyz.y * src1->xyz.z);
+	partial1.xyz.y = (src0->xyz.z * src1->xyz.x);
+	partial1.xyz.z = (src0->xyz.x * src1->xyz.y);
+
+	partial2.xyz.x =  (src0->xyz.z * src1->xyz.y);
+	partial2.xyz.y =  (src0->xyz.x * src1->xyz.z);
+	partial2.xyz.z =  (src0->xyz.y * src1->xyz.x);
+
+	return vm_vec_equal(partial1, partial2);
 }
 
 //computes non-normalized surface normal from three points.
@@ -816,7 +794,15 @@ matrix *vm_vec_ang_2_matrix(matrix *m, const vec3d *v, float a)
 	return t;
 }
 
-//generate the vectors for the vm_vector_2_matrix() an vm_vector_2_matrix_norm() functions so we can avoid goto
+/**
+ * @brief Generates a matrix from a normalized fvec.
+ *
+ * @param[in,out] matrix The matrix to generate
+ *
+ * @details The matrix's fvec is used to generate the uvec and rvec
+ *
+ * @sa vm_vector_2_matrix(), vm_vector_2_matrix_norm()
+ */
 void vm_vector_2_matrix_gen_vectors(matrix *m)
 {
 	vec3d *xvec=&m->vec.rvec;
@@ -842,57 +828,35 @@ void vm_vector_2_matrix_gen_vectors(matrix *m)
 	}
 }
 
-//computes a matrix from one or more vectors. The forward vector is required,
-//with the other two being optional.  If both up & right vectors are passed,
-//the up vector is used.  If only the forward vector is passed, a bank of
-//zero is assumed
-//returns ptr to matrix
 matrix *vm_vector_2_matrix(matrix *m, const vec3d *fvec, const vec3d *uvec, const vec3d *rvec)
 {
-	vec3d *xvec=&m->vec.rvec;
-	vec3d *yvec=&m->vec.uvec;
-	vec3d *zvec=&m->vec.fvec;
+	vec3d fvec_norm;
+	vm_vec_copy_normalize(&fvec_norm, fvec);
+	fvec = &fvec_norm;
 
-	Assert(fvec != NULL);
-
-	vm_vec_copy_normalize(zvec,fvec);
-
-	if (uvec == NULL) {
-		if (rvec == NULL) {     //just forward vec
-			vm_vector_2_matrix_gen_vectors(m);
-		}
-		else {                      //use right vec
-			vm_vec_copy_normalize(xvec,rvec);
-
-			vm_vec_cross(yvec,zvec,xvec);
-
-			//normalize new perpendicular vector
-			vm_vec_normalize(yvec);
-
-			//now recompute right vector, in case it wasn't entirely perpendiclar
-			vm_vec_cross(xvec,yvec,zvec);
-		}
+	vec3d uvec_norm;
+	if (uvec != nullptr) {
+		vm_vec_copy_normalize(&uvec_norm, uvec);
+		uvec = &uvec_norm;
 	}
-	else {      //use up vec
-		vm_vec_copy_normalize(yvec,uvec);
 
-		vm_vec_cross(xvec,yvec,zvec);
-
-		//normalize new perpendicular vector
-		vm_vec_normalize(xvec);
-
-		//now recompute up vector, in case it wasn't entirely perpendiclar
-		vm_vec_cross(yvec,zvec,xvec);
+	vec3d rvec_norm;
+	if (rvec != nullptr) {
+		vm_vec_copy_normalize(&rvec_norm, rvec);
+		rvec = &rvec_norm;
 	}
-	return m;
+
+	// Call the actuall function for normalized vectors
+	return vm_vector_2_matrix_norm(m, fvec, uvec, rvec);
 }
 
-//quicker version of vm_vector_2_matrix() that takes normalized vectors
 matrix *vm_vector_2_matrix_norm(matrix *m, const vec3d *fvec, const vec3d *uvec, const vec3d *rvec)
 {
-	vec3d *xvec=&m->vec.rvec;
-	vec3d *yvec=&m->vec.uvec;
-	vec3d *zvec=&m->vec.fvec;
+	matrix temp = *m;
+
+	vec3d *xvec=&temp.vec.rvec;
+	vec3d *yvec=&temp.vec.uvec;
+	vec3d *zvec=&temp.vec.fvec;
 
 	Assert(fvec != NULL);
 
@@ -900,9 +864,11 @@ matrix *vm_vector_2_matrix_norm(matrix *m, const vec3d *fvec, const vec3d *uvec,
 
 	if (uvec == NULL) {
 		if (rvec == NULL) {     //just forward vec
-			vm_vector_2_matrix_gen_vectors(m);
+			vm_vector_2_matrix_gen_vectors(&temp);
 		}
 		else {                      //use right vec
+			*xvec = *rvec;
+
 			vm_vec_cross(yvec,zvec,xvec);
 
 			//normalize new perpendicular vector
@@ -913,14 +879,30 @@ matrix *vm_vector_2_matrix_norm(matrix *m, const vec3d *fvec, const vec3d *uvec,
 		}
 	}
 	else {      //use up vec
+		*yvec = *uvec;
+
 		vm_vec_cross(xvec,yvec,zvec);
 
-		//normalize new perpendicular vector
-		vm_vec_normalize(xvec);
+		if (vm_vec_equal(*xvec, vmd_zero_vector)) {
+			// uvec was bogus (either same as fvec or -fvec)
+			// Reset temp to the original values and do the setup again
+			temp = *m;
 
-		//now recompute up vector, in case it wasn't entirely perpendiclar
-		vm_vec_cross(yvec,zvec,xvec);
+			temp.vec.fvec = *fvec;
+
+			vm_vector_2_matrix_gen_vectors(&temp);
+		}
+		else {
+			//normalize new perpendicular vector
+			vm_vec_normalize(xvec);
+
+			//now recompute up vector, in case it wasn't entirely perpendiclar
+			vm_vec_cross(yvec,zvec,xvec);
+		}
 	}
+
+	// Copy the computed values into the output parameter
+	*m = temp;
 	return m;
 }
 
@@ -1575,32 +1557,6 @@ void vm_quaternion_rotate(matrix *M, float theta, const vec3d *u)
 	M->vec.fvec.xyz.y = 2.0f*b*c - 2.0f*s*a;
 	M->vec.fvec.xyz.z = 1.0f - 2.0f*a*a - 2.0f*b*b;
 }
-
-// --------------------------------------------------------------------------------------
-// function finds the rotation matrix about the z axis for a given rotation angle (in radians)
-// this is an optimized version vm_quaternion_rotate
-//
-//		inputs:	m			=>		point to resultant rotation matrix
-//				angle		=>		rotation angle about z axis (in radians)
-//
-#pragma warning(push)
-#pragma warning(disable: 4505) // Unused local function
-static void rotate_z ( matrix *m, float theta )
-{
-	m->vec.rvec.xyz.x = cosf (theta);
-	m->vec.rvec.xyz.y = sinf (theta);
-	m->vec.rvec.xyz.z = 0.0f;
-
-	m->vec.uvec.xyz.x = -m->vec.rvec.xyz.y;
-	m->vec.uvec.xyz.y =  m->vec.rvec.xyz.x;
-	m->vec.uvec.xyz.z = 0.0f;
-
-	m->vec.fvec.xyz.x = 0.0f;
-	m->vec.fvec.xyz.y = 0.0f;
-	m->vec.fvec.xyz.z = 1.0f;
-}
-#pragma warning(pop)
-
 
 // --------------------------------------------------------------------------------------
 
@@ -2313,7 +2269,7 @@ void vm_find_bounding_sphere(const vec3d *pnts, int num_pnts, vec3d *center, flo
 	vm_vec_sub(&diff, &dia2, center);
 	rad_sq = vm_vec_mag_squared(&diff);
 	rad = fl_sqrt(rad_sq);
-	Assert( !_isnan(rad) );
+	Assert( !fl_is_nan(rad) );
 
 	// second pass
 	for ( i = 0; i < num_pnts; i++ ) {
@@ -2391,7 +2347,7 @@ void vm_estimate_next_orientation(const matrix *last_orient, const matrix *curre
 //	Return true if all elements of *vec are legal, that is, not a NAN.
 int is_valid_vec(const vec3d *vec)
 {
-	return !_isnan(vec->xyz.x) && !_isnan(vec->xyz.y) && !_isnan(vec->xyz.z);
+	return !std::isnan(vec->xyz.x) && !std::isnan(vec->xyz.y) && !std::isnan(vec->xyz.z);
 }
 
 //	Return true if all elements of *m are legal, that is, not a NAN.
@@ -2722,4 +2678,154 @@ bool vm_inverse_matrix4(const matrix4 *m, matrix4 *invOut)
 	}
 
 	return true;
+}
+
+void vm_matrix4_set_orthographic(matrix4* out, vec3d *max, vec3d *min)
+{
+	memset(out, 0, sizeof(matrix4));
+
+	out->a1d[0] = 2.0f / (max->xyz.x - min->xyz.x);
+	out->a1d[5] = 2.0f / (max->xyz.y - min->xyz.y);
+	out->a1d[10] = -2.0f / (max->xyz.z - min->xyz.z);
+	out->a1d[12] = -(max->xyz.x + min->xyz.x) / (max->xyz.x - min->xyz.x);
+	out->a1d[13] = -(max->xyz.y + min->xyz.y) / (max->xyz.y - min->xyz.y);
+	out->a1d[14] = -(max->xyz.z + min->xyz.z) / (max->xyz.z - min->xyz.z);
+	out->a1d[15] = 1.0f;
+}
+
+void vm_matrix4_set_inverse_transform(matrix4 *out, matrix *m, vec3d *v)
+{
+	// this is basically the same function as the opengl view matrix construction
+	// except we don't invert the Z-axis
+	vec3d scaled_pos;
+	vec3d inv_pos;
+	matrix inv_orient;
+
+	vm_vec_copy_scale(&scaled_pos, v, -1.0f);
+
+	vm_copy_transpose(&inv_orient, m);
+	vm_vec_rotate(&inv_pos, &scaled_pos, m);
+
+	vm_matrix4_set_transform(out, &inv_orient, &inv_pos);
+}
+
+void vm_matrix4_set_identity(matrix4 *out)
+{
+	out->a2d[0][0] = 1.0f;
+	out->a2d[0][1] = 0.0f;
+	out->a2d[0][2] = 0.0f;
+	out->a2d[0][3] = 0.0f;
+
+	out->a2d[1][0] = 0.0f;
+	out->a2d[1][1] = 1.0f;
+	out->a2d[1][2] = 0.0f;
+	out->a2d[1][3] = 0.0f;
+
+	out->a2d[2][0] = 0.0f;
+	out->a2d[2][1] = 0.0f;
+	out->a2d[2][2] = 1.0f;
+	out->a2d[2][3] = 0.0f;
+
+	out->a2d[3][0] = 0.0f;
+	out->a2d[3][1] = 0.0f;
+	out->a2d[3][2] = 0.0f;
+	out->a2d[3][3] = 1.0f;
+}
+
+void vm_matrix4_set_transform(matrix4 *out, matrix *m, vec3d *v)
+{
+	vm_matrix4_set_identity(out);
+
+	out->a2d[0][0] = m->a2d[0][0];
+	out->a2d[0][1] = m->a2d[0][1];
+	out->a2d[0][2] = m->a2d[0][2];
+
+	out->a2d[1][0] = m->a2d[1][0];
+	out->a2d[1][1] = m->a2d[1][1];
+	out->a2d[1][2] = m->a2d[1][2];
+
+	out->a2d[2][0] = m->a2d[2][0];
+	out->a2d[2][1] = m->a2d[2][1];
+	out->a2d[2][2] = m->a2d[2][2];
+
+	out->a2d[3][0] = v->a1d[0];
+	out->a2d[3][1] = v->a1d[1];
+	out->a2d[3][2] = v->a1d[2];
+}
+
+void vm_matrix4_get_orientation(matrix *out, matrix4 *m)
+{
+	out->a2d[0][0] = m->a2d[0][0];
+	out->a2d[0][1] = m->a2d[0][1];
+	out->a2d[0][2] = m->a2d[0][2];
+
+	out->a2d[1][0] = m->a2d[1][0];
+	out->a2d[1][1] = m->a2d[1][1];
+	out->a2d[1][2] = m->a2d[1][2];
+
+	out->a2d[2][0] = m->a2d[2][0];
+	out->a2d[2][1] = m->a2d[2][1];
+	out->a2d[2][2] = m->a2d[2][2];
+}
+
+void vm_matrix4_get_offset(vec3d *out, matrix4 *m)
+{
+	out->xyz.x = m->vec.pos.xyzw.x;
+	out->xyz.y = m->vec.pos.xyzw.y;
+	out->xyz.z = m->vec.pos.xyzw.z;
+}
+
+void vm_matrix4_x_matrix4(matrix4 *dest, const matrix4 *src0, const matrix4 *src1)
+{
+	dest->vec.rvec.xyzw.x	= vm_vec4_dot4(src0->vec.rvec.xyzw.x, src0->vec.uvec.xyzw.x, src0->vec.fvec.xyzw.x, src0->vec.pos.xyzw.x, &src1->vec.rvec);
+	dest->vec.uvec.xyzw.x	= vm_vec4_dot4(src0->vec.rvec.xyzw.x, src0->vec.uvec.xyzw.x, src0->vec.fvec.xyzw.x, src0->vec.pos.xyzw.x, &src1->vec.uvec);
+	dest->vec.fvec.xyzw.x	= vm_vec4_dot4(src0->vec.rvec.xyzw.x, src0->vec.uvec.xyzw.x, src0->vec.fvec.xyzw.x, src0->vec.pos.xyzw.x, &src1->vec.fvec);
+	dest->vec.pos.xyzw.x	= vm_vec4_dot4(src0->vec.rvec.xyzw.x, src0->vec.uvec.xyzw.x, src0->vec.fvec.xyzw.x, src0->vec.pos.xyzw.x, &src1->vec.pos);
+	
+	dest->vec.rvec.xyzw.y	= vm_vec4_dot4(src0->vec.rvec.xyzw.y, src0->vec.uvec.xyzw.y, src0->vec.fvec.xyzw.y, src0->vec.pos.xyzw.y, &src1->vec.rvec);
+	dest->vec.uvec.xyzw.y	= vm_vec4_dot4(src0->vec.rvec.xyzw.y, src0->vec.uvec.xyzw.y, src0->vec.fvec.xyzw.y, src0->vec.pos.xyzw.y, &src1->vec.uvec);
+	dest->vec.fvec.xyzw.y	= vm_vec4_dot4(src0->vec.rvec.xyzw.y, src0->vec.uvec.xyzw.y, src0->vec.fvec.xyzw.y, src0->vec.pos.xyzw.y, &src1->vec.fvec);
+	dest->vec.pos.xyzw.y	= vm_vec4_dot4(src0->vec.rvec.xyzw.y, src0->vec.uvec.xyzw.y, src0->vec.fvec.xyzw.y, src0->vec.pos.xyzw.y, &src1->vec.pos);
+
+	dest->vec.rvec.xyzw.z	= vm_vec4_dot4(src0->vec.rvec.xyzw.z, src0->vec.uvec.xyzw.z, src0->vec.fvec.xyzw.z, src0->vec.pos.xyzw.z, &src1->vec.rvec);
+	dest->vec.uvec.xyzw.z	= vm_vec4_dot4(src0->vec.rvec.xyzw.z, src0->vec.uvec.xyzw.z, src0->vec.fvec.xyzw.z, src0->vec.pos.xyzw.z, &src1->vec.uvec);
+	dest->vec.fvec.xyzw.z	= vm_vec4_dot4(src0->vec.rvec.xyzw.z, src0->vec.uvec.xyzw.z, src0->vec.fvec.xyzw.z, src0->vec.pos.xyzw.z, &src1->vec.fvec);
+	dest->vec.pos.xyzw.z	= vm_vec4_dot4(src0->vec.rvec.xyzw.z, src0->vec.uvec.xyzw.z, src0->vec.fvec.xyzw.z, src0->vec.pos.xyzw.z, &src1->vec.pos);
+
+	dest->vec.rvec.xyzw.w	= vm_vec4_dot4(src0->vec.rvec.xyzw.w, src0->vec.uvec.xyzw.w, src0->vec.fvec.xyzw.w, src0->vec.pos.xyzw.w, &src1->vec.rvec);
+	dest->vec.uvec.xyzw.w	= vm_vec4_dot4(src0->vec.rvec.xyzw.w, src0->vec.uvec.xyzw.w, src0->vec.fvec.xyzw.w, src0->vec.pos.xyzw.w, &src1->vec.uvec);
+	dest->vec.fvec.xyzw.w	= vm_vec4_dot4(src0->vec.rvec.xyzw.w, src0->vec.uvec.xyzw.w, src0->vec.fvec.xyzw.w, src0->vec.pos.xyzw.w, &src1->vec.fvec);
+	dest->vec.pos.xyzw.w	= vm_vec4_dot4(src0->vec.rvec.xyzw.w, src0->vec.uvec.xyzw.w, src0->vec.fvec.xyzw.w, src0->vec.pos.xyzw.w, &src1->vec.pos);
+}
+
+float vm_vec4_dot4(float x, float y, float z, float w, const vec4 *v)
+{
+	return (x * v->xyzw.x) + (y * v->xyzw.y) + (z * v->xyzw.z) + (w * v->xyzw.w);
+}
+
+void vm_vec_transform(vec4 *dest, vec4 *src, matrix4 *m)
+{
+	dest->xyzw.x = (m->vec.rvec.xyzw.x * src->xyzw.x) + (m->vec.uvec.xyzw.x * src->xyzw.y) + (m->vec.fvec.xyzw.x * src->xyzw.z) + (m->vec.pos.xyzw.x * src->xyzw.w);
+	dest->xyzw.y = (m->vec.rvec.xyzw.y * src->xyzw.x) + (m->vec.uvec.xyzw.y * src->xyzw.y) + (m->vec.fvec.xyzw.y * src->xyzw.z) + (m->vec.pos.xyzw.y * src->xyzw.w);
+	dest->xyzw.z = (m->vec.rvec.xyzw.z * src->xyzw.x) + (m->vec.uvec.xyzw.z * src->xyzw.y) + (m->vec.fvec.xyzw.z * src->xyzw.z) + (m->vec.pos.xyzw.z * src->xyzw.w);
+	dest->xyzw.w = (m->vec.rvec.xyzw.w * src->xyzw.x) + (m->vec.uvec.xyzw.w * src->xyzw.y) + (m->vec.fvec.xyzw.w * src->xyzw.z) + (m->vec.pos.xyzw.w * src->xyzw.w);
+}
+
+void vm_vec_transform(vec3d *dest, vec3d *src, matrix4 *m, bool pos)
+{
+	vec4 temp_src, temp_dest;
+
+	temp_src.xyzw.x = src->xyz.x;
+	temp_src.xyzw.y = src->xyz.y;
+	temp_src.xyzw.z = src->xyz.z;
+
+	// whether to treat vec3d src as a position or a vector. 
+	// 0.0f will prevent matrix4 m's offset from being added. 1.0f will add the offset. 
+	temp_src.xyzw.w = pos ? 1.0f : 0.0f;
+
+	vm_vec_transform(&temp_dest, &temp_src, m);
+
+	dest->xyz.x = temp_dest.xyzw.x;
+	dest->xyz.y = temp_dest.xyzw.y;
+	dest->xyz.z = temp_dest.xyzw.z;
 }

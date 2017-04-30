@@ -122,7 +122,7 @@ size_t factor_table::getNext(size_t n, size_t current)
 	if (n > _lookup.size())
 		resize(n);
 
-	int index = n - 1;
+	size_t index = n - 1;
 	for (size_t i = 0; i < _lookup[index].size(); ++i)
 	{
 		if (_lookup[index][i] == current)
@@ -195,7 +195,7 @@ enum cheatCode {
 
 struct Cheat {
 	cheatCode code;
-	char* data;
+	const char* data;
 };
 
 static struct Cheat cheatsTable[] = {
@@ -497,7 +497,7 @@ void debug_cycle_player_ship(int delta)
 			si_index = static_cast<int>(Ship_info.size() - 1);
 		}
 		sip = &Ship_info[si_index];
-		if ( sip->flags & SIF_PLAYER_SHIP ){
+		if ( sip->flags[Ship::Info_Flags::Player_ship] ){
 			break;
 		}
 
@@ -548,11 +548,11 @@ void debug_cycle_targeted_ship(int delta)
 	
 		// if it has test in the name, jump over it
 		strcpy_s(name, sip->name);
-		_strlwr(name);
+		strlwr(name);
 		if ( strstr(name,NOX("test")) != NULL )
 			continue;
 
-		if ( sip->species == species && (sip->flags & (SIF_FIGHTER | SIF_BOMBER | SIF_TRANSPORT) ) )
+        if (sip->species == species && (sip->is_fighter_bomber() || sip->flags[Ship::Info_Flags::Transport]))
 			break;
 
 		// just in case
@@ -588,18 +588,15 @@ void debug_max_primary_weapons(object *objp)	// Goober5000
 	ship_weapon *swp = &shipp->weapons;
 	weapon_info *wip;
 
-	if (sip->flags & SIF_BALLISTIC_PRIMARIES)
+	for ( index = 0; index < MAX_SHIP_PRIMARY_BANKS; index++ )
 	{
-		for ( index = 0; index < MAX_SHIP_PRIMARY_BANKS; index++ )
+		wip = &Weapon_info[swp->primary_bank_weapons[index]];
+		if (wip->wi_flags[Weapon::Info_Flags::Ballistic])
 		{
-			wip = &Weapon_info[swp->primary_bank_weapons[index]];
-			if (wip->wi_flags2 & WIF2_BALLISTIC)
-			{
-				float capacity, size;
-				capacity = (float) sip->primary_bank_ammo_capacity[index];
-				size = (float) wip->cargo_size;
-				swp->primary_bank_ammo[index] = fl2i((capacity / size)+0.5f);
-			}
+			float capacity, size;
+			capacity = (float) sip->primary_bank_ammo_capacity[index];
+			size = (float) wip->cargo_size;
+			swp->primary_bank_ammo[index] = fl2i((capacity / size)+0.5f);
 		}
 	}
 }
@@ -612,7 +609,7 @@ void debug_change_song(int delta)
 		HUD_sourced_printf(HUD_SOURCE_HIDDEN, XSTR( "Soundtrack changed to: %s", 2), buf);
 
 	} else {
-		HUD_sourced_printf(HUD_SOURCE_HIDDEN, XSTR( "Event music is not playing", 3));
+		HUD_sourced_printf(HUD_SOURCE_HIDDEN, "%s", XSTR( "Event music is not playing", 3));
 	}
 }
 
@@ -709,11 +706,12 @@ void process_debug_keys(int k)
 
 		case KEY_DEBUGGED + KEY_C:
 		case KEY_DEBUGGED1 + KEY_C:
-			if(Player_obj->flags & OF_COLLIDES){
-				obj_set_flags(Player_obj, Player_obj->flags & ~(OF_COLLIDES));
+            
+			if(Player_obj->flags[Object::Object_Flags::Collides]){
+				obj_set_flags(Player_obj, Player_obj->flags - Object::Object_Flags::Collides);
 				HUD_sourced_printf(HUD_SOURCE_HIDDEN, "Player no longer collides");
-			} else {
-				obj_set_flags(Player_obj, Player_obj->flags | OF_COLLIDES);
+			} else {                
+				obj_set_flags(Player_obj, Player_obj->flags + Object::Object_Flags::Collides);
 				HUD_sourced_printf(HUD_SOURCE_HIDDEN, "Player collides");
 			}
 			break;
@@ -862,7 +860,7 @@ void process_debug_keys(int k)
 
 					if ( sp->subsys_info[SUBSYSTEM_ENGINE].aggregate_current_hits <= 0.0f ) {
 						mission_log_add_entry(LOG_SHIP_DISABLED, sp->ship_name, NULL );
-						sp->flags |= SF_DISABLED;				// add the disabled flag
+						sp->flags.set(Ship::Ship_Flags::Disabled);				// add the disabled flag
 					}
 
 					if ( sp->subsys_info[SUBSYSTEM_TURRET].aggregate_current_hits <= 0.0f ) {
@@ -890,8 +888,8 @@ void process_debug_keys(int k)
 		//	Select next object to be viewed by AI.
 		case KEY_DEBUGGED + KEY_I:
 		case KEY_DEBUGGED1 + KEY_I:
-			Player_obj->flags ^= OF_INVULNERABLE;
-			HUD_sourced_printf(HUD_SOURCE_HIDDEN, XSTR( "You are %s", 10), Player_obj->flags & OF_INVULNERABLE ? XSTR( "now INVULNERABLE!", 11) : XSTR( "no longer invulnerable...", 12));
+            Player_obj->flags.toggle(Object::Object_Flags::Invulnerable);
+			HUD_sourced_printf(HUD_SOURCE_HIDDEN, XSTR( "You are %s", 10), Player_obj->flags[Object::Object_Flags::Invulnerable] ? XSTR( "now INVULNERABLE!", 11) : XSTR( "no longer invulnerable...", 12));
 			break;
 
 		case KEY_DEBUGGED + KEY_SHIFTED + KEY_I:
@@ -899,8 +897,8 @@ void process_debug_keys(int k)
 			if (Player_ai->target_objnum != -1) {
 				object	*objp = &Objects[Player_ai->target_objnum];
 
-				objp->flags ^= OF_INVULNERABLE;
-				HUD_sourced_printf(HUD_SOURCE_HIDDEN, XSTR( "Player's target [%s] is %s", 13), Ships[objp->instance].ship_name, objp->flags & OF_INVULNERABLE ? XSTR( "now INVULNERABLE!", 11) : XSTR( "no longer invulnerable...", 12));
+				objp->flags.toggle(Object::Object_Flags::Invulnerable);
+				HUD_sourced_printf(HUD_SOURCE_HIDDEN, XSTR( "Player's target [%s] is %s", 13), Ships[objp->instance].ship_name, objp->flags[Object::Object_Flags::Invulnerable] ? XSTR( "now INVULNERABLE!", 11) : XSTR( "no longer invulnerable...", 12));
 			}
 			break;
 
@@ -936,9 +934,9 @@ void process_debug_keys(int k)
 			Weapon_energy_cheat = !Weapon_energy_cheat;
 			if (Weapon_energy_cheat) {
 				if (k & KEY_SHIFTED)
-					HUD_sourced_printf(HUD_SOURCE_HIDDEN, XSTR( "Weapon energy and missile count will always be at full ALL SHIPS!", 15));
+					HUD_sourced_printf(HUD_SOURCE_HIDDEN, "%s", XSTR( "Weapon energy and missile count will always be at full ALL SHIPS!", 15));
 				else
-					HUD_sourced_printf(HUD_SOURCE_HIDDEN, XSTR( "Weapon energy and missile count will always be at full for player", 16));
+					HUD_sourced_printf(HUD_SOURCE_HIDDEN, "%s", XSTR( "Weapon energy and missile count will always be at full for player", 16));
 
 				debug_max_secondary_weapons(Player_obj);
 				debug_max_primary_weapons(Player_obj);
@@ -953,7 +951,7 @@ void process_debug_keys(int k)
 				}
 
 			} else
-				HUD_sourced_printf(HUD_SOURCE_HIDDEN, XSTR( "Normal weapon energy system / missile count restored", 17));
+				HUD_sourced_printf(HUD_SOURCE_HIDDEN, "%s", XSTR( "Normal weapon energy system / missile count restored", 17));
 
 			break;
 
@@ -1010,7 +1008,7 @@ void process_debug_keys(int k)
 			objp->phys_info.vel = vel;
 			objp->phys_info.desired_vel = vel;
 			objp->pos = Player_obj->pos;
-			HUD_sourced_printf(HUD_SOURCE_HIDDEN, XSTR( "Asteroid launched", 1595));
+			HUD_sourced_printf(HUD_SOURCE_HIDDEN, "%s", XSTR( "Asteroid launched", 1595));
 			break;
 		}
 
@@ -1052,11 +1050,11 @@ void process_debug_keys(int k)
 		case KEY_DEBUGGED + KEY_M: {
 			if ( Event_music_enabled ) {
 				event_music_disable();
-				HUD_sourced_printf(HUD_SOURCE_HIDDEN, XSTR( "Event music disabled", 20));
+				HUD_sourced_printf(HUD_SOURCE_HIDDEN, "%s", XSTR( "Event music disabled", 20));
 
 			} else {
 				event_music_enable();
-				HUD_sourced_printf(HUD_SOURCE_HIDDEN, XSTR( "Event music enabled", 21));
+				HUD_sourced_printf(HUD_SOURCE_HIDDEN, "%s", XSTR( "Event music enabled", 21));
 			}
 
 			break;
@@ -1099,14 +1097,14 @@ void process_debug_keys(int k)
 				break;
 
 			Test_begin = 1;
-			HUD_sourced_printf(HUD_SOURCE_HIDDEN, XSTR( "Frame Rate test started", 23));
+			HUD_sourced_printf(HUD_SOURCE_HIDDEN, "%s", XSTR( "Frame Rate test started", 23));
 
 			break;
 		}
 #endif
 		case KEY_DEBUGGED + KEY_A:	{
 
-			HUD_printf("frame rate currently is %0.2 FPS", 1/flFrametime);
+			HUD_printf("frame rate currently is %0.2f FPS", 1.f/flFrametime);
 
 			break;
 		}
@@ -1181,7 +1179,7 @@ void process_debug_keys(int k)
 		case KEY_DEBUGGED + KEY_T: {
 			char buf[256];
 			event_music_get_info(buf);
-			HUD_sourced_printf(HUD_SOURCE_HIDDEN, buf);
+			HUD_sourced_printf(HUD_SOURCE_HIDDEN, "%s", buf);
 			break;
 		}
 
@@ -1587,7 +1585,7 @@ void game_process_cheats(int k)
 			ship_idx++;
 		} while(1);
 
-		shipp->flags |= SF_ESCORT;
+		shipp->flags.set(Ship::Ship_Flags::Escort);
 		shipp->escort_priority = 1000 - ship_idx;
 
 		// now make sure we're not colliding with anyone
@@ -1599,7 +1597,7 @@ void game_process_cheats(int k)
 			// mark all turrets as beam free
 			if (ptr->system_info->type == SUBSYSTEM_TURRET)
 			{
-				ptr->weapons.flags |= SW_FLAG_BEAM_FREE;
+				ptr->weapons.flags.set(Ship::Weapon_Flags::Beam_Free);
 				ptr->turret_next_fire_stamp = timestamp((int) frand_range(50.0f, 4000.0f));
 			}
 		}
@@ -1646,7 +1644,7 @@ void game_process_keys()
 					}
 
 					//If topdown view in non-2D mission, go back to cockpit view.
-					if ( (Viewer_mode & VM_TOPDOWN) && !(The_mission.flags & MISSION_FLAG_2D_MISSION) && !(Perspective_locked) ) {
+					if ( (Viewer_mode & VM_TOPDOWN) && !(The_mission.flags[Mission::Mission_Flags::Mission_2d]) && !(Perspective_locked) ) {
 						Viewer_mode &= ~VM_TOPDOWN;
 						break;
 					}
@@ -1756,7 +1754,7 @@ int button_function_critical(int n, net_player *p = NULL)
 		npl = p;
 		at_self = 0;
 
-		if ( NETPLAYER_IS_DEAD(npl) || (Ships[Objects[pl->objnum].instance].flags & SF_DYING) )
+		if ( NETPLAYER_IS_DEAD(npl) || (Ships[Objects[pl->objnum].instance].flags[Ship::Ship_Flags::Dying]) )
 			return 0;
 	}
 	
@@ -1768,9 +1766,9 @@ int button_function_critical(int n, net_player *p = NULL)
 				ship * shipp = &Ships[objp->instance];
 				ship_weapon *swp = &shipp->weapons;
 				ship_info *sip = &Ship_info[shipp->ship_info_index];
-				if (sip->flags2 & SIF2_DYN_PRIMARY_LINKING) {
+				if (sip->flags[Ship::Info_Flags::Dyn_primary_linking]) {
 					polymodel *pm = model_get( sip->model_num );
-					count = ftables.getNext( pm->gun_banks[ swp->current_primary_bank ].num_slots, swp->primary_bank_slot_count[ swp->current_primary_bank ] );
+					count = (int)ftables.getNext( pm->gun_banks[ swp->current_primary_bank ].num_slots, swp->primary_bank_slot_count[ swp->current_primary_bank ] );
 					swp->primary_bank_slot_count[ swp->current_primary_bank ] = count;
 					shipp->last_fired_point[ swp->current_primary_bank ] += count - ( shipp->last_fired_point[ swp->current_primary_bank ] % count);
 					shipp->last_fired_point[ swp->current_primary_bank ] -= 1;
@@ -1848,7 +1846,7 @@ int button_function_critical(int n, net_player *p = NULL)
 
 			if ( objp == Player_obj ) {
 				if ( Player_ship->weapons.num_secondary_banks <= 0 ) {
-					HUD_sourced_printf(HUD_SOURCE_HIDDEN, XSTR( "This ship has no secondary weapons", 33));
+					HUD_sourced_printf(HUD_SOURCE_HIDDEN, "%s", XSTR( "This ship has no secondary weapons", 33));
 					gamesnd_play_iface(SND_GENERAL_FAIL);
 					break;
 				}
@@ -1858,17 +1856,17 @@ int button_function_critical(int n, net_player *p = NULL)
 
 			int firepoints = pm->missile_banks[Ships[objp->instance].weapons.current_secondary_bank].num_slots;
 
-			if ( Ships[objp->instance].flags & SF_SECONDARY_DUAL_FIRE || firepoints < 2) {		
-				Ships[objp->instance].flags &= ~SF_SECONDARY_DUAL_FIRE;
+            if (Ships[objp->instance].flags[Ship::Ship_Flags::Secondary_dual_fire] || firepoints < 2) {
+                Ships[objp->instance].flags.remove(Ship::Ship_Flags::Secondary_dual_fire);
 				if(at_self) {
-					HUD_sourced_printf(HUD_SOURCE_HIDDEN, XSTR( "Secondary weapon set to normal fire mode", 34));
+					HUD_sourced_printf(HUD_SOURCE_HIDDEN, "%s", XSTR( "Secondary weapon set to normal fire mode", 34));
 					snd_play( &Snds[ship_get_sound(Player_obj, SND_SECONDARY_CYCLE)] );
 					hud_gauge_popup_start(HUD_WEAPONS_GAUGE);
 				}
 			} else {
-				Ships[objp->instance].flags |= SF_SECONDARY_DUAL_FIRE;
+                Ships[objp->instance].flags.set(Ship::Ship_Flags::Secondary_dual_fire);
 				if(at_self) {
-					HUD_sourced_printf(HUD_SOURCE_HIDDEN, XSTR( "Secondary weapon set to dual fire mode", 35));
+					HUD_sourced_printf(HUD_SOURCE_HIDDEN, "%s", XSTR( "Secondary weapon set to dual fire mode", 35));
 					snd_play( &Snds[ship_get_sound(Player_obj, SND_SECONDARY_CYCLE)] );
 					hud_gauge_popup_start(HUD_WEAPONS_GAUGE);
 				}
@@ -2100,7 +2098,7 @@ int button_function_demo_valid(int n)
 		if(!Perspective_locked)
 		{
 			Viewer_mode ^= VM_EXTERNAL;
-			Viewer_mode &= ~VM_EXTERNAL_CAMERA_LOCKED;	// reset camera lock when leaving/entering external view
+			Viewer_mode &= ~VM_CAMERA_LOCKED;	// reset camera lock when leaving/entering external view
 		}
 		else
 		{
@@ -2125,11 +2123,11 @@ int button_function_demo_valid(int n)
 	case VIEW_EXTERNAL_TOGGLE_CAMERA_LOCK:
 		control_used(VIEW_EXTERNAL_TOGGLE_CAMERA_LOCK);
 		if ( Viewer_mode & VM_EXTERNAL ) {
-		Viewer_mode ^= VM_EXTERNAL_CAMERA_LOCKED;
-		if ( Viewer_mode & VM_EXTERNAL_CAMERA_LOCKED ) {
-			HUD_sourced_printf(HUD_SOURCE_HIDDEN, XSTR( "External camera is locked, controls will move ship", 36));
+		Viewer_mode ^= VM_CAMERA_LOCKED;
+		if ( Viewer_mode & VM_CAMERA_LOCKED ) {
+			HUD_sourced_printf(HUD_SOURCE_HIDDEN, "%s", XSTR( "External camera is locked, controls will move ship", 36));
 			} else {
-				HUD_sourced_printf(HUD_SOURCE_HIDDEN, XSTR( "External camera is free, controls will move the camera, not the ship", 37));
+				HUD_sourced_printf(HUD_SOURCE_HIDDEN, "%s", XSTR( "External camera is free, controls will move the camera, not the ship", 37));
 			}
 		}
 		ret = 1;
@@ -2231,7 +2229,7 @@ int button_function(int n)
 	}
 
 	// Goober5000 - if the ship doesn't have subspace drive, jump key doesn't work: so test and exit early
-	if (Player_ship->flags2 & SF2_NO_SUBSPACE_DRIVE)
+	if (Player_ship->flags[Ship::Ship_Flags::No_subspace_drive])
 	{
 		switch(n)
 		{
@@ -2242,7 +2240,7 @@ int button_function(int n)
 	}
 
 	// Goober5000 - if we have primitive sensors, some keys don't work: so test and exit early
-	if (Player_ship->flags2 & SF2_PRIMITIVE_SENSORS)
+	if (Player_ship->flags[Ship::Ship_Flags::Primitive_sensors])
 	{
 		switch (n)
 		{
@@ -2323,7 +2321,7 @@ int button_function(int n)
 		case INCREASE_ENGINE:		// increase energy to engines
 		case DECREASE_ENGINE:		// decrease energy to engines
 		case ETS_EQUALIZE:
-			if ((Player_ship->flags2 & SF2_NO_ETS) == 0) {
+			if ((Player_ship->flags[Ship::Ship_Flags::No_ets]) == 0) {
 				hud_gauge_popup_start(HUD_ETS_GAUGE);
 				return button_function_critical(n);
 			}
@@ -2419,16 +2417,16 @@ int button_function(int n)
 			&& collide_predict_large_ship(Player_obj, 100000.0f)))
 			{
 				gamesnd_play_iface(SND_GENERAL_FAIL);
-				HUD_printf(XSTR( "** WARNING ** Collision danger.  Subspace drive not activated.", 39));
+				HUD_printf("%s", XSTR( "** WARNING ** Collision danger.  Subspace drive not activated.", 39));
 			} else if (!ship_engine_ok_to_warp(Player_ship)) {
 				gamesnd_play_iface(SND_GENERAL_FAIL);
-				HUD_printf(XSTR("Engine failure.  Cannot engage subspace drive.", 40));
+				HUD_printf("%s", XSTR("Engine failure.  Cannot engage subspace drive.", 40));
 			} else if (!ship_navigation_ok_to_warp(Player_ship)) {
 				gamesnd_play_iface(SND_GENERAL_FAIL);
-				HUD_printf(XSTR("Navigation failure.  Cannot engage subspace drive.", 1596));
+				HUD_printf("%s", XSTR("Navigation failure.  Cannot engage subspace drive.", 1596));
 			} else if ( (Player_obj != NULL) && object_get_gliding(Player_obj)) {
 				gamesnd_play_iface(SND_GENERAL_FAIL);
-				HUD_printf(XSTR("Cannot engage subspace drive while gliding.", 1597));
+				HUD_printf("%s", XSTR("Cannot engage subspace drive while gliding.", 1597));
 			} else {
 				gameseq_post_event( GS_EVENT_PLAYER_WARPOUT_START );
 			}
@@ -2501,7 +2499,7 @@ int button_function(int n)
 
 		// Autopilot key control
 		case AUTO_PILOT_TOGGLE:
-			if (!(The_mission.flags & MISSION_FLAG_DEACTIVATE_AP)) {
+			if (!(The_mission.flags[Mission::Mission_Flags::Deactivate_ap])) {
 				if (AutoPilotEngaged) {
 					if (Cmdline_autopilot_interruptable == 1) //allow WCS to disable autopilot interrupt via commandline
 						EndAutoPilot();
@@ -2777,16 +2775,16 @@ int button_function(int n)
 			&& collide_predict_large_ship(Player_obj, 100000.0f)))
 			{
 				gamesnd_play_iface(SND_GENERAL_FAIL);
-				HUD_printf(XSTR( "** WARNING ** Collision danger.  Subspace drive not activated.", 39));
+				HUD_printf("%s", XSTR( "** WARNING ** Collision danger.  Subspace drive not activated.", 39));
 			} else if (!ship_engine_ok_to_warp(Player_ship)) {
 				gamesnd_play_iface(SND_GENERAL_FAIL);
-				HUD_printf(XSTR("Engine failure.  Cannot engage subspace drive.", 40));
+				HUD_printf("%s", XSTR("Engine failure.  Cannot engage subspace drive.", 40));
 			} else if (!ship_navigation_ok_to_warp(Player_ship)) {
 				gamesnd_play_iface(SND_GENERAL_FAIL);
-				HUD_printf(XSTR("Navigation failure.  Cannot engage subspace drive.", 1572));
+				HUD_printf("%s", XSTR("Navigation failure.  Cannot engage subspace drive.", 1572));
 			} else if (Player_obj != NULL && object_get_gliding(Player_obj)) {
 				gamesnd_play_iface(SND_GENERAL_FAIL);
-				HUD_printf(XSTR("Cannot engage subspace drive while gliding.", 1573));			
+				HUD_printf("%s", XSTR("Cannot engage subspace drive while gliding.", 1573));
 			} else {
 				gameseq_post_event( GS_EVENT_PLAYER_WARPOUT_START );
 			}			

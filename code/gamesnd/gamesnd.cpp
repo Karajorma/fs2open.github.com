@@ -15,6 +15,7 @@
 #include "parse/parselo.h"
 #include "sound/ds.h"
 #include "species_defs/species_defs.h"
+#include "tracing/tracing.h"
 
 SCP_vector<game_snd>	Snds;
 SCP_vector<game_snd>	Snds_iface;
@@ -1120,7 +1121,7 @@ void gamesnd_parse_soundstbl()
 	parse_modular_table("*-snd.tbm", parse_sound_table);
 
 	// if we are missing any species then report
-	if (missingFlybySounds.size() > 0)
+	if (!missingFlybySounds.empty())
 	{
 		SCP_string errorString;
 		for (size_t i = 0; i < missingFlybySounds.size(); i++)

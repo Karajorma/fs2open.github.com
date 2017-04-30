@@ -3,7 +3,9 @@
 SET(FREESPACE_SRC freespace.cpp
 				levelpaging.cpp
 				freespace.h
-				levelpaging.h)
+				levelpaging.h
+				SDLGraphicsOperations.cpp
+				SDLGraphicsOperations.h)
 
 IF(FSO_BUILD_PACKAGE)
 	IF(FSO_INSTRUCTION_SET STREQUAL "SSE2" OR FSO_INSTRUCTION_SET STREQUAL "AVX")
@@ -64,3 +66,17 @@ include(CreateLaunchers)
 create_target_launcher(Freespace2
 	WORKING_DIRECTORY ${FSO_FREESPACE_PATH}
 	ARGS ${FSO_RUN_ARGUMENTS})
+
+separate_arguments(RUN_ARGS_LIST UNIX_COMMAND "${FSO_RUN_ARGUMENTS}")
+message("${FSO_RUN_ARGUMENTS}")
+add_custom_target(launch_fso
+		COMMAND Freespace2 ${RUN_ARGS_LIST}
+		WORKING_DIRECTORY "${FSO_FREESPACE_PATH}"
+		COMMENT "Launching FreeSpace"
+		VERBATIM)
+
+# Ensure that Xcode generates debug symbols on macOS for Debug builds
+set_target_properties(Freespace2 PROPERTIES XCODE_ATTRIBUTE_GCC_GENERATE_DEBUGGING_SYMBOLS[variant=Debug] "YES")
+set_target_properties(Freespace2 PROPERTIES XCODE_ATTRIBUTE_COPY_PHASE_STRIP[variant=Debug] "NO")
+set_target_properties(Freespace2 PROPERTIES XCODE_ATTRIBUTE_STRIP_INSTALLED_PRODUCT[variant=Debug] "NO")
+set_target_properties(Freespace2 PROPERTIES XCODE_ATTRIBUTE_GCC_SYMBOLS_PRIVATE_EXTERN[variant=Debug] "NO")

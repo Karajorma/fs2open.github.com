@@ -16,7 +16,7 @@
 
 class object;
 struct CFILE;
-class draw_list;
+class model_draw_list;
 
 #define MAX_DEBRIS_ARCS 8		// Must be less than MAX_ARC_EFFECTS in model.h
 
@@ -63,11 +63,11 @@ extern int Num_debris_pieces;
 struct collision_info_struct;
 
 void debris_init();
-void debris_render(object * obj, draw_list *scene);
+void debris_render(object * obj, model_draw_list *scene);
 void debris_delete( object * obj );
 void debris_process_post( object * obj, float frame_time);
 object *debris_create( object * source_obj, int model_num, int submodel_num, vec3d *pos, vec3d *exp_center, int hull_flag, float exp_force );
-int debris_check_collision( object * obj, object * other_obj, vec3d * hitpos, collision_info_struct *debris_hit_info=NULL );
+int debris_check_collision( object * obj, object * other_obj, vec3d * hitpos, collision_info_struct *debris_hit_info=NULL, vec3d* hitnormal = NULL );
 void debris_hit( object * debris_obj, object * other_obj, vec3d * hitpos, float damage );
 int debris_get_team(object *objp);
 void debris_clear_expired_flag(debris *db);

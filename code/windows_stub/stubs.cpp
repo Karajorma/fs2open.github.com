@@ -11,7 +11,7 @@
 #include <sys/time.h>
 #include <unistd.h>
 
-#include "SDL.h"
+#include "windows_stub/config.h"
 
 #include "platformChecks.h"
 
@@ -34,25 +34,6 @@
 #include "cmdline/cmdline.h"
 #include "debugconsole/console.h"
 #include "globalincs/pstypes.h"
-#include "parse/lua.h"
-
-bool env_enabled = false;
-bool cell_enabled = false;
-
-char *strnset( char* string, int fill, size_t count)
-{
-	char *p = string;
-
- 	for(; *p; p++ ) {
-		if( count == 0 )
-			break;
-
- 		*p = (char)fill;
-		count--;
- 	}
-
-	return string;
-}
 
 // find the size of a file
 int filelength(int fd)
@@ -201,34 +182,9 @@ int _chdir(const char *path)
 // make specified directory
 int _mkdir(const char *path)
 {
-	int status = 1;		// if we don't ever call mkdir() to update this then assume we are in error
-	char *c, tmp_path[MAX_PATH];
-
-	memset(tmp_path, 0, MAX_PATH);
-	strncpy(tmp_path, path, MAX_PATH-1);
-
-	c = &tmp_path[1];
-
-	while (c++) {
-		c = strchr(c, '/');
-
-		if (c) {
-			*c = '\0';
-
-			status = mkdir(tmp_path, 0755);
-
-#ifndef NDEBUG
-			int m_error = errno;
-
-			if (status && (m_error != EEXIST) ) {
-				Warning(__FILE__, __LINE__, "Cannot mkdir %s: %s", tmp_path, strerror(m_error));
-			}
-#endif
-			*c = '/';
-		}
-	}
-
-	return status;
+	// Windows _mkdir does not take file permissions as a parameter.
+	// umask already deals with that, so 0777 should be fine.
+	return mkdir(path, 0777);
 }
 
 void _splitpath (char *path, char *drive, char *dir, char *fname, char *ext)
@@ -278,18 +234,6 @@ int MulDiv(int number, int numerator, int denominator)
 	result = (int) tmp;
 
 	return result;
-}
-
-// lowercase a string
-void strlwr(char *s)
-{
-	if (s == NULL)
-		return;
-
-	while (*s) {
-		*s = tolower(*s);
-		s++;
-	}
 }
 
 #endif // SCP_UNIX

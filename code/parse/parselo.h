@@ -13,6 +13,7 @@
 #include "cfile/cfile.h"
 #include "globalincs/globals.h"
 #include "globalincs/pstypes.h"
+#include "globalincs/flagset.h"
 #include "def_files/def_files.h"
 
 #include <exception>
@@ -90,44 +91,44 @@ extern void ignore_gray_space();
 // error
 extern int get_line_num();
 extern char *next_tokens();
-extern void diag_printf(char *format, ...);
-extern void error_display(int error_level, char *format, ...);
+extern void diag_printf(SCP_FORMAT_STRING const char *format, ...) SCP_FORMAT_STRING_ARGS(1, 2);
+extern void error_display(int error_level, SCP_FORMAT_STRING const char *format, ...) SCP_FORMAT_STRING_ARGS(2, 3);
 
 // skip
-extern int skip_to_string(char *pstr, char *end = NULL);
-extern int skip_to_start_of_string(char *pstr, char *end = NULL);
-extern int skip_to_start_of_string_either(char *pstr1, char *pstr2, char *end = NULL);
-extern void advance_to_eoln(char *terminators);
+extern int skip_to_string(const char *pstr, const char *end = NULL);
+extern int skip_to_start_of_string(const char *pstr, const char *end = NULL);
+extern int skip_to_start_of_string_either(const char *pstr1, const char *pstr2, const char *end = NULL);
+extern void advance_to_eoln(const char *terminators);
 extern void skip_token();
 
 // optional
 extern int optional_string(const char *pstr);
-extern int optional_string_either(char *str1, char *str2);
+extern int optional_string_either(const char *str1, const char *str2);
 extern int optional_string_one_of(int arg_count, ...);
 
 // required
 extern int required_string(const char *pstr);
-extern int required_string_either(char *str1, char *str2);
+extern int required_string_either(const char *str1, const char *str2);
 extern int required_string_one_of(int arg_count, ...);
 
 // stuff
-extern void copy_to_eoln(char *outstr, char *more_terminators, char *instr, int max);
-extern void copy_text_until(char *outstr, char *instr, char *endstr, int max_chars);
+extern void copy_to_eoln(char *outstr, const char *more_terminators, const char *instr, int max);
+extern void copy_text_until(char *outstr, char *instr, const char *endstr, int max_chars);
 extern void stuff_string_white(char *outstr, int len = 0);
-extern void stuff_string_until(char *outstr, char *endstr, int len = 0);
-extern void stuff_string(char *outstr, int type, int len, char *terminators = NULL);
+extern void stuff_string_until(char *outstr, const char *endstr, int len = 0);
+extern void stuff_string(char *outstr, int type, int len, const char *terminators = NULL);
 extern void stuff_string_line(char *outstr, int len);
 
 // SCP_string stuff
-extern void copy_to_eoln(SCP_string &outstr, char *more_terminators, char *instr);
-extern void copy_text_until(SCP_string &outstr, char *instr, char *endstr);
+extern void copy_to_eoln(SCP_string &outstr, const char *more_terminators, const char *instr);
+extern void copy_text_until(SCP_string &outstr, char *instr, const char *endstr);
 extern void stuff_string_white(SCP_string &outstr);
-extern void stuff_string_until(SCP_string &outstr, char *endstr);
-extern void stuff_string(SCP_string &outstr, int type, char *terminators = NULL);
+extern void stuff_string_until(SCP_string &outstr, const char *endstr);
+extern void stuff_string(SCP_string &outstr, int type, const char *terminators = NULL);
 extern void stuff_string_line(SCP_string &outstr);
 
 //alloc
-extern char* alloc_block(char* startstr, char* endstr, int extra_chars = 0);
+extern char* alloc_block(const char* startstr, const char* endstr, int extra_chars = 0);
 
 // Exactly the same as stuff string only Malloc's the buffer.
 //	Supports various FreeSpace primitive types.  If 'len' is supplied, it will override
@@ -142,28 +143,95 @@ extern void stuff_ubyte(ubyte *i);
 extern int stuff_string_list(SCP_vector<SCP_string>& slp);
 extern int stuff_string_list(char slp[][NAME_LENGTH], int max_strings);
 extern int parse_string_flag_list(int *dest, flag_def_list defs[], int defs_size);
+
+
+// A templated version of parse_string_flag_list, to go along with the templated flag_def_list_new.
+// If the "is_special" flag is set, or a string was not found in the def list, it will be added to the unparsed_or_special_strings Vector
+// so that you can process it properly later 
+template<class T, class Flagset>
+int parse_string_flag_list(Flagset& dest, flag_def_list_new<T> defs [], size_t n_defs, SCP_vector<SCP_string>* unparsed_or_special_strings)
+{
+    char(*slp)[NAME_LENGTH] = (char(*)[32])new char[n_defs*NAME_LENGTH];
+    int num_strings = stuff_string_list(slp, (int)n_defs);
+
+    for (auto i = 0; i < num_strings; i++)
+    {
+        bool string_parsed = false;
+        for (size_t j = 0; j < n_defs; j++)
+        {
+            if (!stricmp(slp[i], defs[j].name)) {
+				if (defs[j].in_use) {
+					Assertion(defs[j].def != T::NUM_VALUES, "Error in definition for flag_def_list, flag '%s' has been given an invalid value but is still marked as in use.\n", defs[j].name);
+					dest.set(defs[j].def);
+				}
+
+                if (!defs[j].is_special)
+                    string_parsed = true;
+            }
+        }
+        if (!string_parsed && unparsed_or_special_strings != NULL) {
+            SCP_string s = SCP_string(slp[i]);
+            unparsed_or_special_strings->push_back(s);
+        }
+    }
+
+    delete[] slp;	//>_>
+                    //nobody saw that right
+
+    return num_strings;
+}
+
+extern bool atol2(long *out);
+template<class T>
+void stuff_flagset(T *dest) {
+    long l;
+    bool success = atol2(&l);
+    dest->from_long(l);
+
+    if (!success)
+        skip_token();
+    else
+        Mp += strspn(Mp, "+-0123456789");
+
+    if (*Mp == ',')
+        Mp++;
+
+    diag_printf("Stuffed flagset: %ld\n", dest->to_long());
+}
+
 extern int stuff_int_list(int *ilp, int max_ints, int lookup_type = RAW_INTEGER_TYPE);
-extern int stuff_float_list(float* flp, int max_floats);
+extern size_t stuff_float_list(float* flp, size_t max_floats);
 extern int stuff_vec3d_list(vec3d *vlp, int max_vecs);
 extern int stuff_vec3d_list(SCP_vector<vec3d> &vec_list);
 extern int stuff_bool_list(bool *blp, int max_bools);
 extern void stuff_vec3d(vec3d *vp);
 extern void stuff_matrix(matrix *mp);
-extern int string_lookup(char *str1, char *strlist[], int max, char *description = NULL, int say_errors = 0);
-extern void find_and_stuff(char *id, int *addr, int f_type, char *strlist[], int max, char *description);
-extern void find_and_stuff_optional(char *id, int *addr, int f_type, char *strlist[], int max, char *description);
-extern int match_and_stuff(int f_type, char *strlist[], int max, char *description);
-extern void find_and_stuff_or_add(char *id, int *addr, int f_type, char *strlist[], int *total,
-	int max, char *description);
+extern void find_and_stuff(const char *id, int *addr, int f_type, const char *strlist[], size_t max, const char *description);
+extern void find_and_stuff_optional(const char *id, int *addr, int f_type, const char * const *strlist, size_t max, const char *description);
+extern int match_and_stuff(int f_type, const char * const *strlist, int max, const char *description);
+extern void find_and_stuff_or_add(const char *id, int *addr, int f_type, char *strlist[], int *total,
+	int max, const char *description);
 extern int get_string(char *str, int max = -1);
 extern void get_string(SCP_string &str);
 extern void stuff_parenthesized_vec3d(vec3d *vp);
 extern void stuff_boolean(int *i, bool a_to_eol=true);
 extern void stuff_boolean(bool *b, bool a_to_eol=true);
 extern void stuff_boolean_flag(int *i, int flag, bool a_to_eol=true);
+
+int string_lookup(const char *str1, const char* const *strlist, size_t max, const char *description = NULL, bool say_errors = false);
+
+template<class Flags, class Flagset>
+void stuff_boolean_flag(Flagset& destination, Flags flag, bool a_to_eol = true)
+{
+    bool temp;
+    stuff_boolean(&temp, a_to_eol);
+    destination.set(flag, temp);
+}
+
 extern int check_for_string(const char *pstr);
 extern int check_for_string_raw(const char *pstr);
 extern int check_for_eof();
+extern int check_for_eof_raw();
 extern int check_for_eoln();
 
 // from aicode.cpp
@@ -189,22 +257,26 @@ extern void read_raw_file_text(const char *filename, int mode = CF_TYPE_ANY, cha
 extern void process_raw_file_text(char *processed_text = NULL, char *raw_text = NULL);
 extern void debug_show_mission_text();
 extern void convert_sexp_to_string(SCP_string &dest, int cur_node, int mode);
+extern size_t maybe_convert_foreign_characters(const char *in, char *out, bool add_null = true);
+extern void maybe_convert_foreign_characters(SCP_string &text);
+extern size_t get_converted_string_length(const char *text);
+extern size_t get_converted_string_length(const SCP_string &text);
 char *split_str_once(char *src, int max_pixel_w);
 int split_str(const char *src, int max_pixel_w, int *n_chars, const char **p_str, int max_lines, char ignore_char = -1);
-int split_str(const char *src, int max_pixel_w, SCP_vector<int> &n_chars, SCP_vector<const char*> &p_str, char ignore_char);
+int split_str(const char *src, int max_pixel_w, SCP_vector<int> &n_chars, SCP_vector<const char*> &p_str, char ignore_char = -1);
 
 // fred
 extern int required_string_fred(char *pstr, char *end = NULL);
-extern int required_string_either_fred(char *str1, char *str2);
+extern int required_string_either_fred(const char *str1, const char *str2);
 extern int optional_string_fred(char *pstr, char *end = NULL, char *end2 = NULL);
 
 // Goober5000 - returns position of replacement or -1 for exceeded length (SCP_string variants return the result)
-extern int replace_one(char *str, char *oldstr, char *newstr, unsigned int max_len, int range = 0);
+extern ptrdiff_t replace_one(char *str, const char *oldstr, const char *newstr, size_t max_len, ptrdiff_t range = 0);
 extern SCP_string& replace_one(SCP_string& context, const SCP_string& from, const SCP_string& to);
 extern SCP_string& replace_one(SCP_string& context, const char* from, const char* to);
 
 // Goober5000 - returns number of replacements or -1 for exceeded length (SCP_string variants return the result)
-extern int replace_all(char *str, char *oldstr, char *newstr, unsigned int max_len, int range = 0);
+extern ptrdiff_t replace_all(char *str, const char *oldstr, const char *newstr, size_t max_len, ptrdiff_t range = 0);
 extern SCP_string& replace_all(SCP_string& context, const SCP_string& from, const SCP_string& to);
 extern SCP_string& replace_all(SCP_string& context, const char* from, const char* to);
 
@@ -217,7 +289,7 @@ extern bool can_construe_as_integer(const char *text);
 
 // Goober5000 (ditto for C++)
 extern void vsprintf(SCP_string &dest, const char *format, va_list ap);
-extern void sprintf(SCP_string &dest, const char *format, ...);
+extern void sprintf(SCP_string &dest, SCP_FORMAT_STRING const char *format, ...) SCP_FORMAT_STRING_ARGS(2, 3);
 
 // Goober5000
 extern int subsystem_stricmp(const char *str1, const char *str2);

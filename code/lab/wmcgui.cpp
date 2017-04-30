@@ -139,7 +139,7 @@ bool ScreenClassInfoEntry::Parse()
 	return false;
 }
 
-void GUISystem::ParseClassInfo(char* filename)
+void GUISystem::ParseClassInfo(const char* filename)
 {
 	if (ClassInfoParsed) {
 		Warning(LOCATION, "Class info is being parsed twice");
@@ -172,7 +172,7 @@ void GUISystem::ParseClassInfo(char* filename)
 	}
 }
 
-void ClassInfoEntry::Parse(char* tag, int in_type)
+void ClassInfoEntry::Parse(const char* tag, int in_type)
 {
 	char buf[MAX_FILENAME_LEN];
 	strcpy_s(buf, "+");
@@ -374,7 +374,7 @@ ObjectClassInfoEntry *GUIScreen::GetObjectClassInfo(GUIObject *cgp)
 		}
 
 		for (i = 0; i < len; i++) {
-			if ( cgp->Parent->InfoEntry->Subentries[i].Name.size() == 0 
+			if ( cgp->Parent->InfoEntry->Subentries[i].Name.empty()
 			&& cgp->Parent->InfoEntry->Subentries[i].Object == cgp->Type ) {
 				return &cgp->Parent->InfoEntry->Subentries[i];
 			}
@@ -388,7 +388,7 @@ ObjectClassInfoEntry *GUIScreen::GetObjectClassInfo(GUIObject *cgp)
 		}
 
 		for (i = 0; i < len; i++) {
-			if( ScreenClassInfo->Entries[i].Name.size() == 0 && 
+			if( ScreenClassInfo->Entries[i].Name.empty() && 
 				ScreenClassInfo->Entries[i].Object == cgp->Type ) {
 				return &ScreenClassInfo->Entries[i];
 			}
@@ -407,7 +407,7 @@ ObjectClassInfoEntry *GUIScreen::GetObjectClassInfo(GUIObject *cgp)
 		}
 
 		for (i = 0; i < len; i++) {
-			if( OwnerSystem->GetClassInfo()->Entries[i].Name.size() == 0 && 
+			if( OwnerSystem->GetClassInfo()->Entries[i].Name.empty() && 
 				OwnerSystem->GetClassInfo()->Entries[i].Object == cgp->Type) {
 				return &OwnerSystem->GetClassInfo()->Entries[i];
 			}
@@ -472,6 +472,8 @@ void GUIScreen::DeleteObject(GUIObject* dgp)
 
 int GUIScreen::OnFrame(float frametime, bool doevents)
 {
+	GR_DEBUG_SCOPE("GUIScreen Frame");
+
 	GUIObject* cgp;
 	GUIObject* cgp_prev;
 	bool SomethingPressed = false;
@@ -608,6 +610,8 @@ ScreenClassInfoEntry *GUISystem::GetScreenClassInfo(const SCP_string & screen_na
 
 int GUISystem::OnFrame(float frametime, bool doevents, bool clearandflip)
 {
+	GR_DEBUG_SCOPE("GUISystem Frame");
+
 	//Set the global status variables for this frame
 	LastStatus = Status;
 	Status = GST_MOUSE_OVER;
@@ -748,7 +752,7 @@ GUIObject::GUIObject(const SCP_string &in_Name, int x_coord, int y_coord, int x_
 	if (x_width == 0 || y_height == 0) {
 		return;
 	}
-	
+
 	//No! Bad!
 	if (in_Name.length() < 1) {
 		return;
@@ -831,7 +835,7 @@ GUIObject* GUIObject::AddChildInternal(GUIObject *cgp)
 	cgp->GetOIECoords(&cgp->Coords[0], &cgp->Coords[1], &cgp->Coords[2], &cgp->Coords[3]);
 	//In case we need to resize
 	cgp->OnRefreshSize();
-	
+
 	return cgp;
 }
 
@@ -840,7 +844,7 @@ GUIObject* GUIObject::AddChild(GUIObject* cgp)
 	if (cgp == NULL) {
 		return NULL;
 	}
-	
+
 	//AddInternalChild must be used
 	if (cgp->Style & GS_INTERNALCHILD) {
 		return NULL;
@@ -892,6 +896,8 @@ void GUIObject::OnDraw(float frametime)
 
 int GUIObject::OnFrame(float frametime, int *unused_queue)
 {
+	GR_DEBUG_SCOPE("GUIObject Frame");
+
 	int rval = OF_TRUE;
 
 	GUIObject *cgp_prev;	//Elements will move themselves to the end of the list if they become active
@@ -1231,7 +1237,7 @@ int Window::DoRefreshSize()
 		}
 		
 		int caption_min_size;
-		if (Caption.size() > 0) {
+		if (!Caption.empty()) {
 			gr_get_string_size(&w, &h, Caption.c_str());
 			caption_min_size = w + close_w + hide_w + 5;
 		} else {
@@ -1242,7 +1248,7 @@ int Window::DoRefreshSize()
 				Coords[2] = Coords[0] + caption_min_size + BorderSizes[0] + BorderSizes[2];
 		}
 
-		if (Caption.size() > 0) {
+		if (!Caption.empty()) {
 			if (IMG_HANDLE_IS_VALID(GetCIEImageHandle(WCI_CAPTION))) {
 				int cw, ch;
 				CaptionCoords[0] = Coords[0] + BorderSizes[0];
@@ -2022,7 +2028,7 @@ int Text::DoMouseDown(float frametime)
 	if (Style & T_EDITTABLE) {
 		OwnerSystem->SetActiveObject(this);
 		//For now, always set the cursor pos to the end
-		CursorPos = Content.size();
+		CursorPos = static_cast<int>(Content.size());
 		return OF_TRUE;
 	} else {
 		return OF_FALSE;
@@ -2475,9 +2481,19 @@ int Checkbox::DoMouseUp(float frametime)
 				*FlagPtr &= ~Flag;
 				IsChecked = false;
 			}
-		} else if (BoolFlagPtr != NULL) {
+		}
+		else if (BoolFlagPtr != NULL) {
 			*BoolFlagPtr = !(*BoolFlagPtr);
 			IsChecked = *BoolFlagPtr;
+		}
+		else if (Sip != nullptr)
+		{
+			Sip->flags.toggle(static_cast<Ship::Info_Flags>(Flag));
+			IsChecked = Sip->flags[static_cast<Ship::Info_Flags>(Flag)];
+		} else if (Wip != nullptr) 
+		{
+			Wip->wi_flags.toggle(static_cast<Weapon::Info_Flags>(Flag));
+			IsChecked = Wip->wi_flags[static_cast<Weapon::Info_Flags>(Flag)];
 		} else {
 			IsChecked = !IsChecked;
 		}

@@ -15,21 +15,23 @@
 //		3		Shrink-wrapped texture.  Lasts half-time.
 //		4		Shrink-wrapped texture.  Lasts full-time.
 
+#include "render/3d.h"
+#include "model/model.h"
 #include "freespace.h"
 #include "mission/missionparse.h"
-#include "model/model.h"
 #include "network/multi.h"
 #include "object/objectshield.h"
-#include "render/3d.h"
 #include "ship/ship.h"
 #include "species_defs/species_defs.h"
+#include "tracing/Monitor.h"
+#include "tracing/tracing.h"
 
 int	Show_shield_mesh = 0;
 
 //	One unit in 3d means this in the shield hit texture map.
 #define	SHIELD_HIT_SCALE	0.15f			// Note, larger constant means smaller effect
 #define	MAX_TRIS_PER_HIT	40					//	Number of triangles per shield hit, maximum.
-#define	MAX_SHIELD_HITS	20					//	Maximum number of active shield hits.
+#define	MAX_SHIELD_HITS	200					//	Maximum number of active shield hits.
 #define	MAX_SHIELD_TRI_BUFFER	(MAX_SHIELD_HITS*MAX_TRIS_PER_HIT) //(MAX_SHIELD_HITS*20) //	Persistent buffer of triangle comprising all active shield hits.
 #define	SHIELD_HIT_DURATION	(3*F1_0/4)	//	Duration, in milliseconds, of shield hit effect
 
@@ -60,6 +62,8 @@ typedef struct shield_hit {
 	int	num_tris;								//	Number of Shield_tris comprising this shield.
 	int	tri_list[MAX_TRIS_PER_HIT];				//	Indices into Shield_tris, triangles for this shield hit.
 	ubyte rgb[3];								//  rgb colors
+	matrix hit_orient;							//	hit rotation
+	vec3d hit_pos;								//	hit position
 } shield_hit;
 
 /**
@@ -251,7 +255,7 @@ void free_global_tri_records(int shnum)
 	}
 }
 
-void render_low_detail_shield_bitmap(gshield_tri *trip, matrix *orient, vec3d *pos, ubyte r, ubyte g, ubyte b)
+void shield_render_low_detail_bitmap(int texture, float alpha, gshield_tri *trip, matrix *orient, vec3d *pos, ubyte r, ubyte g, ubyte b)
 {
 	int		j;
 	vec3d	pnt;
@@ -285,26 +289,41 @@ void render_low_detail_shield_bitmap(gshield_tri *trip, matrix *orient, vec3d *p
 
 	vec3d	norm;
 	vm_vec_perp(&norm, &trip->verts[0].pos, &trip->verts[1].pos, &trip->verts[2].pos);
-	vertex	*vertlist[4];
+	//vertex	*vertlist[4];
+	vertex	vertlist[4];
 	if ( vm_vec_dot(&norm, &trip->verts[1].pos ) < 0.0 )	{
-		vertlist[0] = &verts[3]; 
-		vertlist[1] = &verts[2];
-		vertlist[2] = &verts[1]; 
-		vertlist[3] = &verts[0]; 
-		g3_draw_poly( 4, vertlist, TMAP_FLAG_TEXTURED | TMAP_FLAG_RGB | TMAP_FLAG_GOURAUD | TMAP_HTL_3D_UNLIT);
+		vertlist[0] = verts[3]; 
+		vertlist[1] = verts[2];
+		vertlist[2] = verts[1]; 
+		vertlist[3] = verts[0];
+		//vertlist[0] = &verts[3]; 
+		//vertlist[1] = &verts[2];
+		//vertlist[2] = &verts[1]; 
+		//vertlist[3] = &verts[0]; 
+		//g3_draw_poly( 4, vertlist, TMAP_FLAG_TEXTURED | TMAP_FLAG_RGB | TMAP_FLAG_GOURAUD | TMAP_HTL_3D_UNLIT);
 	} else {
-		vertlist[0] = &verts[0]; 
-		vertlist[1] = &verts[1];
-		vertlist[2] = &verts[2]; 
-		vertlist[3] = &verts[3]; 
-		g3_draw_poly( 4, vertlist, TMAP_FLAG_TEXTURED | TMAP_FLAG_RGB | TMAP_FLAG_GOURAUD | TMAP_HTL_3D_UNLIT);
+		vertlist[0] = verts[0]; 
+		vertlist[1] = verts[1];
+		vertlist[2] = verts[2]; 
+		vertlist[3] = verts[3]; 
+		//vertlist[0] = &verts[0]; 
+		//vertlist[1] = &verts[1];
+		//vertlist[2] = &verts[2]; 
+		//vertlist[3] = &verts[3]; 
+		//g3_draw_poly( 4, vertlist, TMAP_FLAG_TEXTURED | TMAP_FLAG_RGB | TMAP_FLAG_GOURAUD | TMAP_HTL_3D_UNLIT);
 	}
+
+	material material_params;
+	material_set_unlit_emissive(&material_params, texture, alpha, 2.0f);
+	g3_render_primitives_colored_textured(&material_params, vertlist, 4, PRIM_TYPE_TRIFAN, false);
 }
 
 /**
  * Render one triangle of a shield hit effect on one ship.
  * Each frame, the triangle needs to be rotated into global coords.
  *
+ * @param texture	handle to desired bitmap to render with
+ * @param alpha		alpha value for color blending
  * @param trip		pointer to triangle in global array
  * @param orient	orientation of object shield is associated with
  * @param pos		center point of object
@@ -312,12 +331,11 @@ void render_low_detail_shield_bitmap(gshield_tri *trip, matrix *orient, vec3d *p
  * @param g			Green colour
  * @param b			Blue colour
  */
-void render_shield_triangle(gshield_tri *trip, matrix *orient, vec3d *pos, ubyte r, ubyte g, ubyte b)
+void shield_render_triangle(int texture, float alpha, gshield_tri *trip, matrix *orient, vec3d *pos, ubyte r, ubyte g, ubyte b)
 {
 	int		j;
 	vec3d	pnt;
-	vertex	*verts[3];
-	vertex	points[3];
+	vertex	verts[3];
     
     memset(&verts, 0, sizeof(verts));
 
@@ -332,40 +350,65 @@ void render_shield_triangle(gshield_tri *trip, matrix *orient, vec3d *pos, ubyte
 		// Pnt is now the x,y,z world coordinates of this vert.
 		// For this example, I am just drawing a sphere at that point.
 
-	 	g3_transfer_vertex(&points[j],&pnt);
+	 	g3_transfer_vertex(&verts[j],&pnt);
 			
-		points[j].texture_position.u = trip->verts[j].u;
-		points[j].texture_position.v = trip->verts[j].v;
+		verts[j].texture_position.u = trip->verts[j].u;
+		verts[j].texture_position.v = trip->verts[j].v;
 		Assert((trip->verts[j].u >= 0.0f) && (trip->verts[j].u <= UV_MAX));
 		Assert((trip->verts[j].v >= 0.0f) && (trip->verts[j].v <= UV_MAX));
-		verts[j] = &points[j];
 	}
 
-	verts[0]->r = r;
-	verts[0]->g = g;
-	verts[0]->b = b;
-	verts[1]->r = r;
-	verts[1]->g = g;
-	verts[1]->b = b;
-	verts[2]->r = r;
-	verts[2]->g = g;
-	verts[2]->b = b;
+	verts[0].r = r;
+	verts[0].g = g;
+	verts[0].b = b;
+	verts[1].r = r;
+	verts[1].g = g;
+	verts[1].b = b;
+	verts[2].r = r;
+	verts[2].g = g;
+	verts[2].b = b;
 
 	vec3d	norm;
 	Poly_count++;
-	vm_vec_perp(&norm,&verts[0]->world,&verts[1]->world,&verts[2]->world);
+	vm_vec_perp(&norm, &verts[0].world, &verts[1].world, &verts[2].world);
 
-	int flags = TMAP_FLAG_TEXTURED | TMAP_FLAG_RGB | TMAP_FLAG_GOURAUD | TMAP_HTL_3D_UNLIT | TMAP_FLAG_EMISSIVE;
+	material material_params;
+	material_set_unlit(&material_params, texture, alpha, true, true);
+	material_params.set_color_scale(2.0f);
 
-	if ( vm_vec_dot(&norm,&verts[1]->world ) >= 0.0 )	{
-		vertex	*vertlist[3];
+	if ( vm_vec_dot(&norm, &verts[1].world) >= 0.0 ) {
+		vertex	vertlist[3];
 		vertlist[0] = verts[2]; 
 		vertlist[1] = verts[1]; 
-		vertlist[2] = verts[0]; 
-		g3_draw_poly( 3, vertlist, flags);
+		vertlist[2] = verts[0];
+
+		g3_render_primitives_colored_textured(&material_params, vertlist, 3, PRIM_TYPE_TRIFAN, false);
 	} else {
-		g3_draw_poly( 3, verts, flags);
+		g3_render_primitives_colored_textured(&material_params, verts, 3, PRIM_TYPE_TRIFAN, false);
 	}
+}
+
+void shield_render_decal(polymodel *pm, matrix *orient, vec3d *pos, matrix* hit_orient, vec3d *hit_pos, float hit_radius, int bitmap_id, color *clr)
+{
+	if ( pm->shield.buffer_id < 0 || pm->shield.buffer_n_verts < 3 ) {
+		return;
+	}
+
+	g3_start_instance_matrix(pos, orient, true);
+
+	shield_material material_info;
+
+	material_info.set_texture_map(TM_BASE_TYPE, bitmap_id);
+	material_info.set_color(*clr);
+	material_info.set_blend_mode(bm_has_alpha_channel(bitmap_id) ? ALPHA_BLEND_ALPHA_BLEND_ALPHA : ALPHA_BLEND_ADDITIVE);
+	material_info.set_depth_mode(ZBUFFER_TYPE_READ);
+	material_info.set_impact_radius(hit_radius);
+	material_info.set_impact_transform(*hit_orient, *hit_pos);
+	material_info.set_cull_mode(false);
+
+	gr_render_shield_impact(&material_info, PRIM_TYPE_TRIS, &pm->shield.layout, pm->shield.buffer_id, pm->shield.buffer_n_verts);
+
+	g3_done_instance(true);
 }
 
 MONITOR(NumShieldRend)
@@ -375,7 +418,6 @@ MONITOR(NumShieldRend)
  */
 void render_shield(int shield_num)
 {
-	int		i;
 	vec3d	*centerp;
 	matrix	*orient;
 	object	*objp;
@@ -390,12 +432,12 @@ void render_shield(int shield_num)
 
 	objp = &Objects[Shield_hits[shield_num].objnum];
 
-	if (objp->flags & OF_NO_SHIELDS)	{
+	if (objp->flags[Object::Object_Flags::No_shields])	{
 		return;
 	}
 
 	//	If this object didn't get rendered, don't render its shields.  In fact, make the shield hit go away.
-	if (!(objp->flags & OF_WAS_RENDERED)) {
+	if (!(objp->flags[Object::Object_Flags::Was_rendered])) {
 		Shield_hits[shield_num].type = SH_UNUSED;
 		return;
 	}
@@ -412,7 +454,7 @@ void render_shield(int shield_num)
 	// objp, shipp, and si are now setup correctly
 
 	//	If this ship is in its deathroll, make the shield hit effects go away faster.
-	if (shipp->flags & SF_DYING)	{
+	if (shipp->flags[Ship::Ship_Flags::Dying])	{
 		Shield_hits[shield_num].start_time -= fl2f(2*flFrametime);
 	}
 
@@ -438,6 +480,7 @@ void render_shield(int shield_num)
 	Assert( (si->species >= 0) && (si->species < (int)Species_info.size()) );
 
 	generic_anim *sa = &Species_info[si->species].shield_anim;
+	polymodel *pm = model_get(si->model_num);
 
 	// don't try to draw if we don't have an ani
 	if ( sa->first_frame >= 0 )
@@ -446,22 +489,29 @@ void render_shield(int shield_num)
 		bitmap_id = sa->first_frame + frame_num;
 
 		float alpha = 0.9999f;
-		if(The_mission.flags & MISSION_FLAG_FULLNEB){
+		if(The_mission.flags[Mission::Mission_Flags::Fullneb]){
 			alpha *= 0.85f;
 		}
 
-		gr_set_bitmap(bitmap_id, GR_ALPHABLEND_FILTER, GR_BITBLT_MODE_NORMAL, alpha );
+		if ( bitmap_id <= -1 ) {
+			return;
+		}
 
 		if ( (Detail.shield_effects == 1) || (Detail.shield_effects == 2) ) {
-			if ( bitmap_id != - 1 ) {
-				render_low_detail_shield_bitmap(&Global_tris[Shield_hits[shield_num].tri_list[0]], orient, centerp, Shield_hits[shield_num].rgb[0], Shield_hits[shield_num].rgb[1], Shield_hits[shield_num].rgb[2]);
+			shield_render_low_detail_bitmap(bitmap_id, alpha, &Global_tris[Shield_hits[shield_num].tri_list[0]], orient, centerp, Shield_hits[shield_num].rgb[0], Shield_hits[shield_num].rgb[1], Shield_hits[shield_num].rgb[2]);
+		} else if ( Detail.shield_effects < 4 ) {
+			for ( int i = 0; i < Shield_hits[shield_num].num_tris; i++ ) {
+				shield_render_triangle(bitmap_id, alpha, &Global_tris[Shield_hits[shield_num].tri_list[i]], orient, centerp, Shield_hits[shield_num].rgb[0], Shield_hits[shield_num].rgb[1], Shield_hits[shield_num].rgb[2]);
 			}
 		} else {
-			if ( bitmap_id != - 1 ) {
-				for (i=0; i<Shield_hits[shield_num].num_tris; i++) {
-					render_shield_triangle(&Global_tris[Shield_hits[shield_num].tri_list[i]], orient, centerp, Shield_hits[shield_num].rgb[0], Shield_hits[shield_num].rgb[1], Shield_hits[shield_num].rgb[2]);
-				}
+			float hit_radius = pm->core_radius;
+			if ( si->is_big_or_huge() ) {
+				hit_radius = pm->core_radius * 0.5f;
 			}
+
+			color clr;
+			gr_init_alphacolor(&clr, Shield_hits[shield_num].rgb[0], Shield_hits[shield_num].rgb[1], Shield_hits[shield_num].rgb[2], fl2i(alpha * 255.0f));
+			shield_render_decal(pm, orient, centerp, &Shield_hits[shield_num].hit_orient, &Shield_hits[shield_num].hit_pos, hit_radius, bitmap_id, &clr);
 		}
 	}
 }
@@ -474,6 +524,9 @@ void render_shield(int shield_num)
  */
 void render_shields()
 {
+	GR_DEBUG_SCOPE("Render Shields");
+	TRACE_SCOPE(tracing::DrawShields);
+
 	int	i;
 
 	if (Detail.shield_effects == 0){
@@ -485,6 +538,8 @@ void render_shields()
 			render_shield(i);
 		}
 	}
+
+	gr_clear_states();
 }
 
 void create_tris_containing(vec3d *vp, matrix *orient, shield_info *shieldp, vec3d *tcp, vec3d *centerp, float radius, vec3d *rvec, vec3d *uvec)
@@ -571,7 +626,7 @@ void create_shield_from_triangle(int trinum, matrix *orient, shield_info *shield
  * We need to store vertex information in the global array since the vertex list
  * will not be available to us when we actually use the array.
  */
-void copy_shield_to_globals( int objnum, shield_info *shieldp )
+void copy_shield_to_globals( int objnum, shield_info *shieldp, matrix *hit_orient, vec3d *hit_pos )
 {
 	int	i, j;
 	int	gi = 0;
@@ -611,10 +666,13 @@ void copy_shield_to_globals( int objnum, shield_info *shieldp )
 	Shield_hits[shnum].num_tris = count;
 	Shield_hits[shnum].start_time = Missiontime;
 	Shield_hits[shnum].objnum = objnum;
+	Shield_hits[shnum].hit_orient = *hit_orient;
+	Shield_hits[shnum].hit_pos = *hit_pos;
 
 	Shield_hits[shnum].rgb[0] = 255;
 	Shield_hits[shnum].rgb[1] = 255;
 	Shield_hits[shnum].rgb[2] = 255;
+
 	if((objnum >= 0) && (objnum < MAX_OBJECTS) && (Objects[objnum].type == OBJ_SHIP) && (Objects[objnum].instance >= 0) && (Objects[objnum].instance < MAX_SHIPS) && (Ships[Objects[objnum].instance].ship_info_index >= 0) && (Ships[Objects[objnum].instance].ship_info_index < static_cast<int>(Ship_info.size()))){
 		ship_info *sip = &Ship_info[Ships[Objects[objnum].instance].ship_info_index];
 		
@@ -624,40 +682,6 @@ void copy_shield_to_globals( int objnum, shield_info *shieldp )
 	}
 }
 
-
-/**
- * Return absolute amount of damage not applied.
- *
- * This is the version that works on a quadrant basis.
- */
-float apply_damage_to_shield(object *objp, int quadrant, float damage)
-{
-	ai_info	*aip;
-
-	// multiplayer clients bail here
-	if(MULTIPLAYER_CLIENT){
-		return damage;
-	}
-
-	if ( (quadrant < 0)  || (quadrant >= objp->n_quadrants) ) return damage;	
-	
-	Assert(objp->type == OBJ_SHIP);
-	aip = &Ai_info[Ships[objp->instance].ai_index];
-	aip->last_hit_quadrant = quadrant;
-
-	objp->shield_quadrant[quadrant] -= damage;
-
-	if (objp->shield_quadrant[quadrant] < 0.0f) {
-		float	remaining_damage;
-
-		remaining_damage = -objp->shield_quadrant[quadrant];
-		objp->shield_quadrant[quadrant] = 0.0f;
-		return remaining_damage;
-	} else {
-		return 0.0f;
-	}
-		
-}
 
 /**
  * This function needs to be called by big ships which have shields. It should be able to be modified to deal with
@@ -724,7 +748,7 @@ void create_shield_explosion(int objnum, int model_num, matrix *orient, vec3d *c
 	polymodel	*pm;
 	int		i;
 
-	if (Objects[objnum].flags & OF_NO_SHIELDS)
+	if (Objects[objnum].flags[Object::Object_Flags::No_shields])
 		return;
 
 	pm = model_get(model_num);
@@ -757,7 +781,7 @@ void create_shield_explosion(int objnum, int model_num, matrix *orient, vec3d *c
 	for (i=0; i<3; i++)
 		create_shield_from_triangle(shieldp->tris[tr0].neighbors[i], orient, shieldp, tcp, centerp, Objects[objnum].radius, &tom.vec.rvec, &tom.vec.uvec);
 	
-	copy_shield_to_globals(objnum, shieldp);
+	copy_shield_to_globals(objnum, shieldp, &tom, tcp);
 }
 
 MONITOR(NumShieldHits)
@@ -840,7 +864,7 @@ void create_shield_explosion_all(object *objp)
 	shipp = &Ships[num];
 
 	count = shipp->shield_hits;
-	objnum = objp-Objects;
+	objnum = OBJ_INDEX(objp);
 
 	for (i=0; i<Num_shield_points; i++) {
 		if (Shield_points[i].objnum == objnum) {
@@ -872,7 +896,7 @@ void ship_draw_shield( object *objp)
 	vec3d	pnt;
 	polymodel * pm; 
 
-	if (objp->flags & OF_NO_SHIELDS)
+	if (objp->flags[Object::Object_Flags::No_shields])
 		return;
 
 	Assert(objp->instance >= 0);
@@ -932,10 +956,12 @@ void ship_draw_shield( object *objp)
 				// point.
 				g3_rotate_vertex(&tmp, &pnt);
 
-				if (j)
+				if (j) {
 					g3_draw_line(&prev_pnt, &tmp);
-				else
+				} else {
 					pnt0 = tmp;
+				}
+
 				prev_pnt = tmp;
 			}
 
@@ -954,14 +980,14 @@ int ship_is_shield_up( object *obj, int quadrant )
 {
 	if ( (quadrant >= 0) && (quadrant < obj->n_quadrants))	{
 		// Just check one quadrant
-		if (obj->shield_quadrant[quadrant] > MAX(2.0f, 0.1f * get_max_shield_quad(obj)))	{
+		if (obj->shield_quadrant[quadrant] > MAX(2.0f, 0.1f * shield_get_max_quad(obj)))	{
 			return 1;
 		}
 	} else {
 		// Check all quadrants
 		float strength = shield_get_strength(obj);
 
-		if ( strength > MAX(2.0f*4.0f, 0.1f * Ships[obj->instance].ship_max_shield_strength ))	{
+		if ( strength > MAX(2.0f*4.0f, 0.1f * shield_get_max_strength(obj)) )	{
 			return 1;
 		}
 	}
@@ -976,7 +1002,7 @@ int ship_is_shield_up( object *obj, int quadrant )
 //	Note: This is in the object's local reference frame.  Do _not_ pass a vector in the world frame.
 int get_quadrant(vec3d *hit_pnt, object *shipobjp)
 {
-	if (shipobjp != NULL && Ship_info[Ships[shipobjp->instance].ship_info_index].flags2 & SIF2_MODEL_POINT_SHIELDS) {
+	if (shipobjp != NULL && Ship_info[Ships[shipobjp->instance].ship_info_index].flags[Ship::Info_Flags::Model_point_shields]) {
 		int closest = -1;
 		float closest_dist = FLT_MAX;
 

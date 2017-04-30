@@ -37,6 +37,7 @@
 #include "parse/parselo.h"
 #include "popup/popup.h"
 #include "render/3d.h"
+#include "render/batching.h"
 #include "ship/ship.h"
 #include "weapon/weapon.h"
 
@@ -99,12 +100,12 @@ int Weapon_select_overlay_id = -1;
 
 // convenient struct for handling all button controls
 struct wl_buttons {
-	char *filename;
+	const char *filename;
 	int x, y, xt, yt;
 	int hotspot;
 	UI_BUTTON button;  // because we have a class inside this struct, we need the constructor below..
 
-	wl_buttons(char *name, int x1, int y1, int xt1, int yt1, int h) : filename(name), x(x1), y(y1), xt(xt1), yt(yt1), hotspot(h) {}
+	wl_buttons(const char *name, int x1, int y1, int xt1, int yt1, int h) : filename(name), x(x1), y(y1), xt(xt1), yt(yt1), hotspot(h) {}
 };
 
 static wl_buttons Buttons[GR_NUM_RESOLUTIONS][MAX_WEAPON_BUTTONS] = {
@@ -131,7 +132,7 @@ static wl_buttons Buttons[GR_NUM_RESOLUTIONS][MAX_WEAPON_BUTTONS] = {
 };
 
 
-static char *Wl_mask_single[NUM_WEAPON_SETTINGS][GR_NUM_RESOLUTIONS] = {
+static const char *Wl_mask_single[NUM_WEAPON_SETTINGS][GR_NUM_RESOLUTIONS] = {
 	{
 		"weaponloadout-m",
 		"2_weaponloadout-m"
@@ -142,7 +143,7 @@ static char *Wl_mask_single[NUM_WEAPON_SETTINGS][GR_NUM_RESOLUTIONS] = {
 	}
 };
 
-static char *Wl_mask_multi[NUM_WEAPON_SETTINGS][GR_NUM_RESOLUTIONS] = {
+static const char *Wl_mask_multi[NUM_WEAPON_SETTINGS][GR_NUM_RESOLUTIONS] = {
 	{
 		"weaponloadoutmulti-m",
 		"2_weaponloadoutmulti-m"
@@ -154,7 +155,7 @@ static char *Wl_mask_multi[NUM_WEAPON_SETTINGS][GR_NUM_RESOLUTIONS] = {
 	}
 };
 
-static char *Wl_loadout_select_mask[NUM_WEAPON_SETTINGS][GR_NUM_RESOLUTIONS] = {
+static const char *Wl_loadout_select_mask[NUM_WEAPON_SETTINGS][GR_NUM_RESOLUTIONS] = {
 	{
 		"weaponloadout-m",
 		"2_weaponloadout-m"
@@ -166,7 +167,7 @@ static char *Wl_loadout_select_mask[NUM_WEAPON_SETTINGS][GR_NUM_RESOLUTIONS] = {
 };
 
 
-static char *Weapon_select_background_fname[NUM_WEAPON_SETTINGS][GR_NUM_RESOLUTIONS] = {
+static const char *Weapon_select_background_fname[NUM_WEAPON_SETTINGS][GR_NUM_RESOLUTIONS] = {
 	{
 		"WeaponLoadout",
 		"2_WeaponLoadout"
@@ -177,7 +178,7 @@ static char *Weapon_select_background_fname[NUM_WEAPON_SETTINGS][GR_NUM_RESOLUTI
 	}
 };
 
-static char *Weapon_select_multi_background_fname[NUM_WEAPON_SETTINGS][GR_NUM_RESOLUTIONS] = {
+static const char *Weapon_select_multi_background_fname[NUM_WEAPON_SETTINGS][GR_NUM_RESOLUTIONS] = {
 	{
 		"WeaponLoadoutMulti",
 		"2_WeaponLoadoutMulti"
@@ -356,8 +357,7 @@ static int Wl_mouse_down_on_region = -1;
 
 // weapon desc stuff
 #define WEAPON_DESC_WIPE_TIME			1.5f			// time in seconds for wipe to occur (over WEAPON_DESC_MAX_LENGTH number of chars)
-#define WEAPON_DESC_MAX_LINES			7				// max lines in the description incl. title
-#define WEAPON_DESC_MAX_LENGTH		50				// max chars per line of description text
+
 static int Weapon_desc_wipe_done = 0;
 static float Weapon_desc_wipe_time_elapsed = 0.0f;
 static char Weapon_desc_lines[WEAPON_DESC_MAX_LINES][WEAPON_DESC_MAX_LENGTH];			// 1st 2 lines are title, rest are desc
@@ -754,7 +754,12 @@ void wl_render_overhead_view(float frametime)
 		{
 			if (wl_ship->model_num < 0)
 			{
-				wl_ship->model_num = model_load(sip->pof_file, sip->n_subsystems, &sip->subsystems[0]);
+				if (sip->pof_file_tech[0] != '\0') {
+					wl_ship->model_num = model_load(sip->pof_file_tech, sip->n_subsystems, &sip->subsystems[0]);
+				}
+				else {
+					wl_ship->model_num = model_load(sip->pof_file, sip->n_subsystems, &sip->subsystems[0]);
+				}
 				model_page_in_textures(wl_ship->model_num, ship_class);
 			}
 
@@ -822,13 +827,18 @@ void wl_render_overhead_view(float frametime)
 		// Load the necessary model file, if necessary
 		if (wl_ship->model_num < 0)
 		{
-			wl_ship->model_num = model_load(sip->pof_file, sip->n_subsystems, &sip->subsystems[0]);
+			if (sip->pof_file_tech[0] != '\0') {
+				wl_ship->model_num = model_load(sip->pof_file_tech, sip->n_subsystems, &sip->subsystems[0]);
+			}
+			else {
+				wl_ship->model_num = model_load(sip->pof_file, sip->n_subsystems, &sip->subsystems[0]);
+			}
 			model_page_in_textures(wl_ship->model_num, ship_class);
 		}
 		
 		if (wl_ship->model_num < 0)
 		{
-			mprintf(("Couldn't load model file in missionweaponchoice.cpp\n"));
+			mprintf(("Couldn't load model file '%s' in missionweaponchoice.cpp\n", sip->pof_file));
 		}
 		else
 		{
@@ -848,10 +858,10 @@ void wl_render_overhead_view(float frametime)
 			{
 				float rev_rate;
 				rev_rate = REVOLUTION_RATE;
-				if (sip->flags & SIF_BIG_SHIP) {
+				if (sip->is_big_ship()) {
 					rev_rate *= 1.7f;
 				}
-				if (sip->flags & SIF_HUGE_SHIP) {
+				if (sip->is_huge_ship()) {
 					rev_rate *= 3.0f;
 				}
 
@@ -892,6 +902,11 @@ void wl_render_overhead_view(float frametime)
 			model_clear_instance(wl_ship->model_num);
 			polymodel *pm = model_get(wl_ship->model_num);
 
+			if (sip->replacement_textures.size() > 0) 
+			{
+				render_info.set_replacement_textures(wl_ship->model_num, sip->replacement_textures);
+			}
+
 			if(Cmdline_shadow_quality)
 			{
 				gr_reset_clip();
@@ -914,7 +929,7 @@ void wl_render_overhead_view(float frametime)
 
             Glowpoint_use_depth_buffer = true;
             
-			batch_render_all();
+			batching_render_all();
 
 			//NOW render the lines for weapons
 			gr_reset_clip();
@@ -1119,16 +1134,6 @@ void wl_set_disabled_weapons(int ship_class)
 		//	Determine whether weapon #i is allowed on this ship class in the current type of mission.
 		//	As of 9/6/99, the only difference is dogfight missions have a different list of legal weapons.
 		Wl_icons[i].can_use = eval_weapon_flag_for_game_type(sip->allowed_weapons[i]);
-
-		// Goober5000: ballistic primaries
-		if (Weapon_info[i].wi_flags2 & WIF2_BALLISTIC)
-		{
-			// not allowed if this ship is not ballistic
-			if (!(sip->flags & SIF_BALLISTIC_PRIMARIES))
-			{
-				Wl_icons[i].can_use = 0;
-			}
-		}
 	}
 }
 
@@ -1502,7 +1507,7 @@ int wl_calc_ballistic_fit(int wi_index, int capacity)
 
 	Assert(Weapon_info[wi_index].subtype == WP_LASER);
 
-	Assert(Weapon_info[wi_index].wi_flags2 & WIF2_BALLISTIC);
+	Assert(Weapon_info[wi_index].wi_flags[Weapon::Info_Flags::Ballistic]);
 
 	return fl2i( capacity / Weapon_info[wi_index].cargo_size + 0.5f );
 }
@@ -2293,7 +2298,7 @@ void wl_render_weapon_desc(float frametime)
 		
 		// draw weapon title (above weapon anim)
 		for (i=0; i<2; i++) {
-			curr_len = strlen(Weapon_desc_lines[i]);
+			curr_len = (int)strlen(Weapon_desc_lines[i]);
 
 			if (bright_char_index < curr_len) {
 				// save bright char and plunk in some nulls to shorten string
@@ -2321,7 +2326,7 @@ void wl_render_weapon_desc(float frametime)
 
 		// draw weapon desc (below weapon anim)
 		for (i=2; i<WEAPON_DESC_MAX_LINES; i++) {
-			curr_len = strlen(Weapon_desc_lines[i]);
+			curr_len = (int)strlen(Weapon_desc_lines[i]);
 
 			if (bright_char_index < curr_len) {
 				// save bright char and plunk in some nulls to shorten string
@@ -2377,7 +2382,7 @@ void wl_weapon_desc_start_wipe()
 {
 	int currchar_src = 0, currline_dest = 2, currchar_dest = 0, i;
 	int w, h;
-	int title_len = strlen(Weapon_info[Selected_wl_class].title);
+	int title_len = (int)strlen(Weapon_info[Selected_wl_class].title);
 
 	// init wipe vars
 	Weapon_desc_wipe_time_elapsed = 0.0f;
@@ -2422,9 +2427,6 @@ void wl_weapon_desc_start_wipe()
 			}
 
 			currchar_src++;
-
-			Assert(currline_dest < WEAPON_DESC_MAX_LINES);
-			Assert(currchar_dest < WEAPON_DESC_MAX_LENGTH);
 		}
 	}
 
@@ -2899,7 +2901,7 @@ void wl_render_icon_count(int num, int x, int y)
 	Assert(number_to_draw >= 0);
 
 	sprintf(buf, "%d", number_to_draw);
-	gr_get_string_size(&num_w, &num_h, buf, strlen(buf));
+	gr_get_string_size(&num_w, &num_h, buf, (int)strlen(buf));
 
 	// render
 	gr_set_color_fast(&Color_white);
@@ -3280,7 +3282,7 @@ void wl_update_parse_object_weapons(p_object *pobjp, wss_unit *slot)
 			ss->primary_banks[j] = slot->wep[i];
 
 			// ballistic primaries - Goober5000
-			if (Weapon_info[slot->wep[i]].wi_flags2 & WIF2_BALLISTIC)
+			if (Weapon_info[slot->wep[i]].wi_flags[Weapon::Info_Flags::Ballistic])
 			{
 				// Important: the primary_ammo[] value is a percentage of max capacity!
 				// which means that it's always 100%, since ballistic primaries are completely
@@ -3403,7 +3405,7 @@ void wl_bash_ship_weapons(ship_weapon *swp, wss_unit *slot)
 			swp->primary_bank_weapons[j] = slot->wep[i];
 
 			// ballistic primaries - Goober5000
-			if (Weapon_info[swp->primary_bank_weapons[j]].wi_flags2 & WIF2_BALLISTIC) {
+			if (Weapon_info[swp->primary_bank_weapons[j]].wi_flags[Weapon::Info_Flags::Ballistic]) {
 				// this is a bit tricky: we must recalculate ammo for full capacity
 				// since wep_count for primaries does not store the ammo; ballistic
 				// primaries always come with a full magazine
@@ -3960,7 +3962,6 @@ void wl_apply_current_loadout_to_all_ships_in_current_wing()
 	size_t i;
 
 	ship_info *sip, *source_sip;
-	weapon_info *wip;
 
 	char ship_name[NAME_LENGTH];
 	char *wep_display_name;
@@ -4028,7 +4029,6 @@ void wl_apply_current_loadout_to_all_ships_in_current_wing()
 
 			// determine the weapon we need
 			weapon_type_to_add = Wss_slots[source_wss_slot].wep[cur_bank];
-			wip = &Weapon_info[weapon_type_to_add];
 
 			// maybe localize
 			if (Lcl_gr)
@@ -4043,8 +4043,7 @@ void wl_apply_current_loadout_to_all_ships_in_current_wing()
 			}
 
 			// make sure this ship can accept this weapon
-			if (!eval_weapon_flag_for_game_type(sip->allowed_weapons[weapon_type_to_add])
-				|| ((wip->wi_flags2 & WIF2_BALLISTIC) && !(sip->flags & SIF_BALLISTIC_PRIMARIES)))
+			if (!eval_weapon_flag_for_game_type(sip->allowed_weapons[weapon_type_to_add]))
 			{
 				SCP_string temp;
 				sprintf(temp, XSTR("%s is unable to carry %s weaponry", 1629), ship_name, wep_display_name);

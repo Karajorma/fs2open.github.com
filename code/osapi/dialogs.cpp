@@ -2,15 +2,20 @@
 #include "osapi/dialogs.h"
 #include "osapi/osapi.h"
 #include "parse/parselo.h"
-#include "parse/lua.h"
 #include "cmdline/cmdline.h"
 #include "graphics/2d.h"
+#include "scripting/ade.h"
 
 #include <SDL_messagebox.h>
 #include <SDL_clipboard.h>
 
 #include <string>
 #include <algorithm>
+
+extern "C" {
+#include <lauxlib.h>
+#include <lualib.h>
+}
 
 namespace
 {
@@ -126,11 +131,9 @@ namespace os
 				mprintf(("ASSERTION: \"%s\" at %s:%d\n", text, filename, linenum));
 			}
 
-#ifdef Allow_NoWarn
-			if (Cmdline_nowarn) {
-				return;
+			if (running_unittests) {
+				throw AssertException(msgStream.str());
 			}
-#endif
 
 			msgStream << "\n";
 			msgStream << dump_stacktrace();
@@ -206,10 +209,21 @@ namespace os
 
 			char stackText[1024];
 			stackText[0] = '\0';
-			ade_stackdump(L, stackText);
+			scripting::ade_stackdump(L, stackText);
 			msgStream << stackText;
 			msgStream << "\n";
 			msgStream << Separator;
+
+			mprintf(("Lua Error: %s\n", msgStream.str().c_str()));
+
+			if (Cmdline_noninteractive) {
+				exit(1);
+				return;
+			}
+
+			if (running_unittests) {
+				throw LuaErrorException(msgStream.str());
+			}
 
 			set_clipboard_text(msgStream.str().c_str());
 
@@ -237,7 +251,7 @@ namespace os
 			boxData.flags = SDL_MESSAGEBOX_ERROR;
 			boxData.message = boxText.c_str();
 			boxData.title = "Error!";
-			boxData.window = os_get_window();
+			boxData.window = os::getSDLMainWindow();
 
 			gr_activate(0);
 
@@ -279,13 +293,27 @@ namespace os
 			messageStream << "File: " << filename << "\n";
 			messageStream << "Line: " << line << "\n";
 
-			SCP_string fullText = messageStream.str();
-			mprintf(("%s\n", fullText.c_str()));
+			Error(messageStream.str().c_str());
+		}
 
-			messageStream << "\n";
+		void Error(const char* text)
+		{
+			mprintf(("\n%s\n", text));
+
+			if (Cmdline_noninteractive) {
+				abort();
+				return;
+			}
+
+			if (running_unittests) {
+				throw ErrorException(text);
+			}
+
+			SCP_stringstream messageStream;
+			messageStream << text << "\n";
 			messageStream << dump_stacktrace();
-			
-			fullText = messageStream.str();
+
+			SCP_string fullText = messageStream.str();
 			set_clipboard_text(fullText.c_str());
 
 			fullText = truncateLines(messageStream, Messagebox_lines);
@@ -293,11 +321,6 @@ namespace os
 			fullText += "\n[ This info is in the clipboard so you can paste it somewhere now ]\n";
 			fullText += "\n\nUse Debug to break into Debugger, Exit will close the application.\n";
 
-			Error(fullText.c_str());
-		}
-
-		void Error(const char* text)
-		{
 			const SDL_MessageBoxButtonData buttons[] = {
 				{ SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT, 1, "Exit" },
 				{ /* .flags, .buttonid, .text */        0, 0, "Debug" },
@@ -312,7 +335,7 @@ namespace os
 			boxData.flags = SDL_MESSAGEBOX_ERROR;
 			boxData.message = text;
 			boxData.title = "Error!";
-			boxData.window = os_get_window();
+			boxData.window = os::getSDLMainWindow();
 
 			gr_activate(0);
 
@@ -356,11 +379,13 @@ namespace os
 			mprintf(("WARNING: \"%s\" at %s:%d\n", printfString.c_str(), filename, line));
 
 			// now go for the additional popup window, if we want it ...
-#ifdef Allow_NoWarn
-			if (Cmdline_nowarn) {
+			if (Cmdline_noninteractive) {
 				return;
 			}
-#endif
+
+			if (running_unittests) {
+				throw WarningException(printfString);
+			}
 
 			SCP_stringstream boxMsgStream;
 			boxMsgStream << "Warning: " << formatMessage << "\n";
@@ -377,8 +402,8 @@ namespace os
 			boxMessage += "\n\nUse Debug to break into Debugger\n";
 
 			const SDL_MessageBoxButtonData buttons[] = {
-				{ SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, 2, "Exit" },
-				{ SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT, 1, "Continue" },
+				{ SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT, 2, "Exit" },
+				{ SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, 1, "Continue" },
 				{ /* .flags, .buttonid, .text */        0, 0, "Debug" },
 			};
 
@@ -391,7 +416,7 @@ namespace os
 			boxData.flags = SDL_MESSAGEBOX_WARNING;
 			boxData.message = boxMessage.c_str();
 			boxData.title = "Warning!";
-			boxData.window = os_get_window();
+			boxData.window = os::getSDLMainWindow();
 
 			gr_activate(0);
 
@@ -450,6 +475,10 @@ namespace os
 
 		void Message(MessageType type, const char* message, const char* title)
 		{
+			if (running_unittests) {
+				throw WarningException(message);
+			}
+
 			int flags = 1;
 
 			switch (type) 
@@ -475,7 +504,7 @@ namespace os
 					break;
 			}
 
-			SDL_ShowSimpleMessageBox(flags, title, message, os_get_window());
+			SDL_ShowSimpleMessageBox(flags, title, message, os::getSDLMainWindow());
 		}
 	}
 }

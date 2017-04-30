@@ -87,14 +87,14 @@
 #define OPTIONS_H_COORD 3
 
 struct options_buttons {
-	char *filename;
+	const char *filename;
 	int x, y;
 	int hotspot;
 	int tab;
 	int flags;
 	UI_BUTTON button;  // because we have a class inside this struct, we need the constructor below..
 
-	options_buttons(char *name, int x1, int y1, int h, int t, int f = 0) : filename(name), x(x1), y(y1), hotspot(h), tab(t), flags(f) {}
+	options_buttons(const char *name, int x1, int y1, int h, int t, int f = 0) : filename(name), x(x1), y(y1), hotspot(h), tab(t), flags(f) {}
 };
 
 static options_buttons Buttons[GR_NUM_RESOLUTIONS][NUM_BUTTONS] = {
@@ -201,8 +201,8 @@ op_sliders Options_sliders[GR_NUM_RESOLUTIONS][NUM_OPTIONS_SLIDERS] = {
 };
 
 static struct {
-	char *filename;
-	char *mask_filename;
+	const char *filename;
+	const char *mask_filename;
 	int bitmap;
 	int mask;
 	
@@ -492,7 +492,7 @@ void options_notify_do_frame()
 
 		} else {
 			gr_get_string_size(&w, &h, Options_notify_string);
-			gr_printf_menu((gr_screen.max_w_unscaled - w) / 2, OPTIONS_NOTIFY_Y, Options_notify_string);
+			gr_printf_menu((gr_screen.max_w_unscaled - w) / 2, OPTIONS_NOTIFY_Y, "%s", Options_notify_string);
 		}
 	}
 }
@@ -997,10 +997,10 @@ void options_menu_init()
 	// create slider	
 	for ( i = 0; i < NUM_OPTIONS_SLIDERS; i++ ) {
 		 Options_sliders[gr_screen.res][i].slider.create(&Ui_window, Options_sliders[gr_screen.res][i].x, Options_sliders[gr_screen.res][i].y,
-																		Options_sliders[gr_screen.res][i].dots, Options_sliders[gr_screen.res][i].filename,
-																		Options_sliders[gr_screen.res][i].hotspot, Options_sliders[gr_screen.res][i].right_filename, Options_sliders[gr_screen.res][i].right_mask, Options_sliders[gr_screen.res][i].right_x, Options_sliders[gr_screen.res][i].right_y,
-																		Options_sliders[gr_screen.res][i].left_filename, Options_sliders[gr_screen.res][i].left_mask, Options_sliders[gr_screen.res][i].left_x, Options_sliders[gr_screen.res][i].left_y,
-																		Options_sliders[gr_screen.res][i].dot_w);
+															Options_sliders[gr_screen.res][i].dots, Options_sliders[gr_screen.res][i].filename,
+															Options_sliders[gr_screen.res][i].hotspot, Options_sliders[gr_screen.res][i].left_filename, Options_sliders[gr_screen.res][i].left_mask, Options_sliders[gr_screen.res][i].left_x, Options_sliders[gr_screen.res][i].left_y,
+															Options_sliders[gr_screen.res][i].right_filename, Options_sliders[gr_screen.res][i].right_mask, Options_sliders[gr_screen.res][i].right_x, Options_sliders[gr_screen.res][i].right_y,
+															Options_sliders[gr_screen.res][i].dot_w);
 	}	
 
 	// maybe disable the skill slider
@@ -1342,10 +1342,10 @@ void options_detail_init()
 	// create detail level sliders	
 	for ( i = 0; i < NUM_DETAIL_SLIDERS; i++ ) {
 		Detail_sliders[gr_screen.res][i].slider.create(&Ui_window, Detail_sliders[gr_screen.res][i].x, Detail_sliders[gr_screen.res][i].y,
-																		Detail_sliders[gr_screen.res][i].dots, Detail_sliders[gr_screen.res][i].filename,
-																		Detail_sliders[gr_screen.res][i].hotspot, Detail_sliders[gr_screen.res][i].right_filename, Detail_sliders[gr_screen.res][i].right_mask, Detail_sliders[gr_screen.res][i].right_x, Detail_sliders[gr_screen.res][i].right_y,
-																		Detail_sliders[gr_screen.res][i].left_filename, Detail_sliders[gr_screen.res][i].left_mask, Detail_sliders[gr_screen.res][i].left_x, Detail_sliders[gr_screen.res][i].left_y,
-																		Detail_sliders[gr_screen.res][i].dot_w);
+														Detail_sliders[gr_screen.res][i].dots, Detail_sliders[gr_screen.res][i].filename,
+														Detail_sliders[gr_screen.res][i].hotspot, Detail_sliders[gr_screen.res][i].left_filename, Detail_sliders[gr_screen.res][i].left_mask, Detail_sliders[gr_screen.res][i].left_x, Detail_sliders[gr_screen.res][i].left_y,
+														Detail_sliders[gr_screen.res][i].right_filename, Detail_sliders[gr_screen.res][i].right_mask, Detail_sliders[gr_screen.res][i].right_x, Detail_sliders[gr_screen.res][i].right_y,
+														Detail_sliders[gr_screen.res][i].dot_w);
 	}
 
 	// init the actual slider positions and our internal positions

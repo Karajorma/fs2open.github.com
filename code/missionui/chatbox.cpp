@@ -36,13 +36,13 @@
 // SMALL CHATBOX ----------------------------------------------------------------------------------
 
 // background bitmap
-char* Chatbox_small_bitmap_fname[GR_NUM_RESOLUTIONS] = {
+const char* Chatbox_small_bitmap_fname[GR_NUM_RESOLUTIONS] = {
 	"Chatbox",		// GR_640
 	"2_Chatbox"		// GR_1024
 };
 
 // background mask
-char* Chatbox_small_bitmap_mask_fname[GR_NUM_RESOLUTIONS] = {
+const char* Chatbox_small_bitmap_mask_fname[GR_NUM_RESOLUTIONS] = {
 	"Chatbox-m",	// GR_640
 	"2_Chatbox-m"	// GR_1024
 };
@@ -86,13 +86,13 @@ int Chatbox_small_max_lines[GR_NUM_RESOLUTIONS] = {
 // BIG CHATBOX ----------------------------------------------------------------------------------
 
 // background bitmap
-char* Chatbox_big_bitmap_fname[GR_NUM_RESOLUTIONS] = {
+const char* Chatbox_big_bitmap_fname[GR_NUM_RESOLUTIONS] = {
 	"ChatboxBig",		// GR_640
 	"2_ChatboxBig"		// GR_1024
 };
 
 // mask
-char* Chatbox_big_bitmap_mask_fname[GR_NUM_RESOLUTIONS] = {
+const char* Chatbox_big_bitmap_mask_fname[GR_NUM_RESOLUTIONS] = {
 	"Chatbox-m",		// GR_640
 	"2_Chatbox-m"			// GR_1024
 };
@@ -136,13 +136,13 @@ int Chatbox_big_max_lines[GR_NUM_RESOLUTIONS] = {
 // PAUSED CHATBOX ----------------------------------------------------------------------------------
 
 // mask
-char* Chatbox_p_bitmap_fname[GR_NUM_RESOLUTIONS] = {
+const char* Chatbox_p_bitmap_fname[GR_NUM_RESOLUTIONS] = {
 	"MPPause",			// GR_640
 	"2_MPPause"			// GR_1024
 };
 
 // mask
-char* Chatbox_p_bitmap_mask_fname[GR_NUM_RESOLUTIONS] = {
+const char* Chatbox_p_bitmap_mask_fname[GR_NUM_RESOLUTIONS] = {
 	"MPPause-m",		// GR_640
 	"2_MPPause-m"		// GR_1024
 };
@@ -398,10 +398,10 @@ int chatbox_get_msg_target_type(char *msg )
 	return MULTI_MSG_EXPR;
 }
 
-int chatbox_get_msg_target_length(char *msg)
+size_t chatbox_get_msg_target_length(char *msg)
 {
 	if ((msg[0] != '/') && (strchr(msg, ':') != NULL) ) {
-		return -1;
+		return 0;
 	}
 
 	// find the first space
@@ -412,16 +412,17 @@ int chatbox_get_msg_target_length(char *msg)
 // automatically split up any input text, send it, and leave the remainder 
 void chatbox_autosplit_line()
 {
-	char *remainder,msg[150];
+	char msg[150];
 	char temp[150];
 	int msg_pixel_width;
-	int target, target_length = -1; 
+	int target;
+	size_t target_length = 0;
 	
 	// if the chat line is getting too long, fire off the message, putting the last
 	// word on the next input line.
 	memset(msg,0,150);
 	Chat_inputbox.get_text(msg);
-	remainder = "";
+	const char* remainder = "";
 
 	// check if this message is supposed to have a recipient
 	target = chatbox_get_msg_target_type(msg); 
@@ -432,10 +433,10 @@ void chatbox_autosplit_line()
 	gr_get_string_size(&msg_pixel_width, NULL, msg);
 	// if ( msg_pixel_width >= (Chatbox_inputbox_w - Player->short_callsign_width) ) {
 	if ( msg_pixel_width >= (Chatbox_inputbox_w - 25)) {
-		remainder = strrchr(msg, ' ');
-		if ( remainder ) {
-			*remainder = '\0';
-			remainder++;
+		auto last_space = strrchr(msg, ' ');
+		if ( last_space ) {
+			*last_space = '\0';
+			remainder = last_space + 1;
 		} else {
 			remainder = "";
 		}	
@@ -467,7 +468,7 @@ void chatbox_autosplit_line()
 		}
 	} else if((Chat_inputbox.pressed() && (msg[0] != '\0')) || (strlen(msg) >= CHATBOX_MAX_LEN)) { 
 		// tack on the null terminator in the boundary case
-		int x = strlen(msg);
+		size_t x = strlen(msg);
 		if(x >= CHATBOX_MAX_LEN){
 			msg[CHATBOX_MAX_LEN-1] = '\0';
 		}

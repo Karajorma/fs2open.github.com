@@ -15,13 +15,13 @@
 #include <stdarg.h>
 #include <string.h>
 
+#include "osapi/DebugWindow.h"
 #include "osapi/osapi.h"
 #include "osapi/outwnd.h"
 #include "graphics/2d.h"
 #include "freespaceresource.h"
 #include "globalincs/systemvars.h"
 #include "cfile/cfilesystem.h"
-#include "globalincs/globals.h"
 #include "parse/parselo.h"
 
 struct outwnd_filter_struct {
@@ -41,7 +41,9 @@ bool outwnd_inited = false;
 // used for file logging
 int Log_debug_output_to_file = 1;
 FILE *Log_fp = NULL;
-char *FreeSpace_logfilename = NULL;
+const char *FreeSpace_logfilename = NULL;
+
+std::unique_ptr<osapi::DebugWindow> debugWindow;
 
 void load_filter_info(void)
 {
@@ -49,7 +51,6 @@ void load_filter_info(void)
 	char pathname[MAX_PATH_LEN];
 	char inbuf[NAME_LENGTH+4];
 	outwnd_filter_struct new_filter;
-	int z;
 
 	outwnd_filter_loaded = 1;
 
@@ -87,7 +88,7 @@ void load_filter_info(void)
 		else
 			continue;	// skip everything else
 
-		z = strlen(inbuf) - 1;
+		auto z = strlen(inbuf) - 1;
 		if (inbuf[z] == '\n')
 			inbuf[z] = 0;
 
@@ -129,7 +130,7 @@ void save_filter_info(void)
 	fp = fopen(os_get_config_path(pathname).c_str(), "wt");
 
 	if (fp) {
-		for (uint i = 0; i < OutwndFilter.size(); i++)
+		for (size_t i = 0; i < OutwndFilter.size(); i++)
 			fprintf(fp, "%c%s\n", OutwndFilter[i].enabled ? '+' : '-', OutwndFilter[i].name);
 
 		fclose(fp);
@@ -168,7 +169,12 @@ void outwnd_printf(const char *id, const char *format, ...)
 
 void outwnd_print(const char *id, const char *tmp)
 {
-	uint i;
+	size_t i;
+
+	if ( running_unittests ) {
+		// Ignore all messages when running unit tests
+		return;
+	}
 
 	if ( (id == NULL) || (tmp == NULL) )
 		return;
@@ -185,7 +191,7 @@ void outwnd_print(const char *id, const char *tmp)
 		outwnd_print( "general", "==========================================================================\n" );
 	}
 
-	uint outwnd_size = OutwndFilter.size();
+	auto outwnd_size = OutwndFilter.size();
 
 	for (i = 0; i < OutwndFilter.size(); i++) {
 		if ( !stricmp(id, OutwndFilter[i].name) )
@@ -217,6 +223,10 @@ void outwnd_print(const char *id, const char *tmp)
 			fflush(Log_fp);
 		}
 	}
+
+	if (debugWindow) {
+		debugWindow->addDebugMessage(id, tmp);
+	}
 }
 
 void outwnd_init()
@@ -224,7 +234,7 @@ void outwnd_init()
 	if (outwnd_inited)
 		return;
 
-	if (Log_fp == NULL) {
+	if (!running_unittests && Log_fp == NULL) {
 		char pathname[MAX_PATH_LEN];
 
 		/* Set where the log file is going to go */
@@ -237,30 +247,33 @@ void outwnd_init()
 			FreeSpace_logfilename = "fs2_open.log";
 		}
 
+		// create data file path if it does not exist
+		_mkdir(os_get_config_path(Pathtypes[CF_TYPE_DATA].path).c_str());
+
 		memset( pathname, 0, sizeof(pathname) );
 		snprintf( pathname, MAX_PATH_LEN, "%s/%s", Pathtypes[CF_TYPE_DATA].path, FreeSpace_logfilename);
 
 		Log_fp = fopen(os_get_config_path(pathname).c_str(), "wb");
 
+		outwnd_inited = Log_fp != nullptr;
+
 		if (Log_fp == NULL) {
-			outwnd_printf("Error", "Error opening %s\n", pathname);
+			fprintf(stderr, "Error opening %s\n", pathname);
 		} else {
 			time_t timedate = time(NULL);
 			char datestr[50];
 
-			memset( datestr, 0, sizeof(datestr) );
-			strftime( datestr, sizeof(datestr)-1, "%a %b %d %H:%M:%S %Y", localtime(&timedate) );
+			memset(datestr, 0, sizeof(datestr));
+			strftime(datestr, sizeof(datestr) - 1, "%a %b %d %H:%M:%S %Y", localtime(&timedate));
 
 			outwnd_printf("General", "Opened log '%s', %s ...\n", pathname, datestr);
 		}
 	}
-
-	outwnd_inited = true;
 }
 
 void outwnd_close()
 {
-	if ( Log_fp != NULL ) {
+	if ( !running_unittests && Log_fp != NULL ) {
 		time_t timedate = time(NULL);
 		char datestr[50];
 
@@ -274,6 +287,16 @@ void outwnd_close()
 	}
 
 	outwnd_inited = false;
+}
+
+void outwnd_debug_window_init() {
+	debugWindow.reset(new osapi::DebugWindow());
+}
+void outwnd_debug_window_do_frame(float frametime) {
+	debugWindow->doFrame(frametime);
+}
+void outwnd_debug_window_deinit() {
+	debugWindow.reset();
 }
 
 #endif //NDEBUG

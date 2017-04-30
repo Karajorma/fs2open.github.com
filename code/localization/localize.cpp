@@ -106,8 +106,6 @@ void parse_stringstbl_quick(const char *filename);
 // initialize localization, if no language is passed - use the language specified in the registry
 void lcl_init(int lang_init)
 {
-	atexit(lcl_xstr_close);
-
 	char lang_string[128];
 	const char *ret;
 	int lang, idx, i;
@@ -172,6 +170,10 @@ void lcl_init(int lang_init)
 	lcl_set_language(lang);
 }
 
+void lcl_close() {
+	lcl_xstr_close();
+}
+
 // determine what language we're running in, see LCL_* defines above
 int lcl_get_language()
 {
@@ -185,44 +187,51 @@ void parse_stringstbl_quick(const char *filename)
 	int lang_idx;
 	int i;
 
-	read_file_text(filename, CF_TYPE_TABLES);
-	reset_parse();
+	try {
+		read_file_text(filename, CF_TYPE_TABLES);
+		reset_parse();
 
-	if (optional_string("#Supported Languages")) {
-		while (required_string_either("#End","$Language:")) {			
-			required_string("$Language:");
-			stuff_string(language.lang_name, F_RAW, LCL_LANG_NAME_LEN + 1);
-			required_string("+Extension:");
-			stuff_string(language.lang_ext, F_RAW, LCL_LANG_NAME_LEN + 1);
-			required_string("+Special Character Index:");
-			stuff_ubyte(&language.special_char_indexes[0]);
-			for (i = 1; i < LCL_MAX_FONTS; ++i) {
-				// default to "none"/0 except for font03 which defaults to 176
-				// NOTE: fonts.tbl may override these values
-				if (i == font::FONT3) {
-					language.special_char_indexes[i] = 176;
-				} else {
-					language.special_char_indexes[i] = 0;
+		if (optional_string("#Supported Languages")) {
+			while (required_string_either("#End","$Language:")) {
+				required_string("$Language:");
+				stuff_string(language.lang_name, F_RAW, LCL_LANG_NAME_LEN + 1);
+				required_string("+Extension:");
+				stuff_string(language.lang_ext, F_RAW, LCL_LANG_NAME_LEN + 1);
+				required_string("+Special Character Index:");
+				stuff_ubyte(&language.special_char_indexes[0]);
+				for (i = 1; i < LCL_MAX_FONTS; ++i) {
+					// default to "none"/0 except for font03 which defaults to 176
+					// NOTE: fonts.tbl may override these values
+					if (i == font::FONT3) {
+						language.special_char_indexes[i] = 176;
+					} else {
+						language.special_char_indexes[i] = 0;
+					}
 				}
-			}
 
-			lang_idx = -1;
+				lang_idx = -1;
 
-			// see if we already have this language
-			for (i = 0; i < (int)Lcl_languages.size(); i++) {
-				if (!strcmp(Lcl_languages[i].lang_name, language.lang_name)) {
-					strcpy_s(Lcl_languages[i].lang_ext, language.lang_ext); 
-					Lcl_languages[i].special_char_indexes[0] = language.special_char_indexes[0];
-					lang_idx = i;
-					break;
+				// see if we already have this language
+				for (i = 0; i < (int)Lcl_languages.size(); i++) {
+					if (!strcmp(Lcl_languages[i].lang_name, language.lang_name)) {
+						strcpy_s(Lcl_languages[i].lang_ext, language.lang_ext);
+						Lcl_languages[i].special_char_indexes[0] = language.special_char_indexes[0];
+						lang_idx = i;
+						break;
+					}
 				}
-			}
 
-			// if we have a new language, add it.
-			if (lang_idx == -1) {
-				Lcl_languages.push_back(language);
+				// if we have a new language, add it.
+				if (lang_idx == -1) {
+					Lcl_languages.push_back(language);
+				}
 			}
 		}
+	}
+	catch (const parse::ParseException& e)
+	{
+		mprintf(("WMCGUI: Unable to parse '%s'!  Error message = %s.\n", filename, e.what()));
+		return;
 	}
 }
 
@@ -232,57 +241,57 @@ void parse_stringstbl_common(const char *filename, const bool external)
 {
 	char chr, buf[4096];
 	char language_tag[512];
-	int i, z, index;
+	int z, index;
 	char *p_offset = NULL;
 	int offset_lo = 0, offset_hi = 0;
 
-	read_file_text(filename, CF_TYPE_TABLES);
-	reset_parse();
+	try {
+		read_file_text(filename, CF_TYPE_TABLES);
+		reset_parse();
 
-	// move down to the proper section		
-	memset(language_tag, 0, sizeof(language_tag));
-	strcpy_s(language_tag, "#");
-	if (external && Lcl_current_lang == FS2_OPEN_DEFAULT_LANGUAGE){
-		strcat_s(language_tag, "default");
-	} else {
-		strcat_s(language_tag, Lcl_languages[Lcl_current_lang].lang_name);
-	}
-
-	if ( skip_to_string(language_tag) != 1 ) {
-		mprintf(("Current language not found in %s\n", filename));
-		return;
-	}
-
-	// parse all the strings in this section of the table
-	while ( !check_for_string("#") ) {
-		int num_offsets_on_this_line = 0;
-
-		stuff_int(&index);
-		if (external) {
-			ignore_white_space();
-			get_string(buf, sizeof(buf));
-			drop_trailing_white_space(buf);
+		// move down to the proper section
+		memset(language_tag, 0, sizeof(language_tag));
+		strcpy_s(language_tag, "#");
+		if (external && Lcl_current_lang == FS2_OPEN_DEFAULT_LANGUAGE){
+			strcat_s(language_tag, "default");
 		} else {
-			stuff_string(buf, F_RAW, sizeof(buf));
+			strcat_s(language_tag, Lcl_languages[Lcl_current_lang].lang_name);
 		}
 
-		if (external && (index < 0 || index >= LCL_MAX_STRINGS)) {
-			error_display(0, "Invalid tstrings table index specified (%i). Please increment LCL_MAX_STRINGS in localize.cpp.", index);
+		if ( skip_to_string(language_tag) != 1 ) {
+			mprintf(("Current language not found in %s\n", filename));
 			return;
-		} else if (!external && (index < 0 || index >= XSTR_SIZE)) {
-			Error(LOCATION, "Invalid strings table index specified (%i)", index);
 		}
-		
-		if (!external) {
-			i = strlen(buf);
 
-			while (i--) {
-				if ( !isspace(buf[i]) )
-					break;
+		// parse all the strings in this section of the table
+		while ( !check_for_string("#") ) {
+			int num_offsets_on_this_line = 0;
+
+			stuff_int(&index);
+			if (external) {
+				ignore_white_space();
+				get_string(buf, sizeof(buf));
+				drop_trailing_white_space(buf);
+			} else {
+				stuff_string(buf, F_RAW, sizeof(buf));
 			}
 
-			// trim unnecessary end of string
-			if (i >= 0) {
+			if (external && (index < 0 || index >= LCL_MAX_STRINGS)) {
+				error_display(0, "Invalid tstrings table index specified (%i). Please increment LCL_MAX_STRINGS in localize.cpp.", index);
+				return;
+			} else if (!external && (index < 0 || index >= XSTR_SIZE)) {
+				Error(LOCATION, "Invalid strings table index specified (%i)", index);
+			}
+
+			if (!external) {
+				size_t i = strlen(buf);
+
+				while (i--) {
+					if ( !isspace(buf[i]) )
+						break;
+				}
+
+				// trim unnecessary end of string
 				// Assert(buf[i] == '"');
 				if (buf[i] != '"') {
 					// probably an offset on this entry
@@ -320,77 +329,82 @@ void parse_stringstbl_common(const char *filename, const bool external)
 				}
 
 				buf[i] = 0;
-			}
 
-			// copy string into buf
-			z = 0;
-			for (i = 1; buf[i]; i++) {
-				chr = buf[i];
+				// copy string into buf
+				z = 0;
+				for (i = 1; buf[i]; i++) {
+					chr = buf[i];
 
-				if (chr == '\\') {
-					chr = buf[++i];
+					if (chr == '\\') {
+						chr = buf[++i];
 
-					if (chr == 'n')
-						chr = '\n';
-					else if (chr == 'r')
-						chr = '\r';
+						if (chr == 'n')
+							chr = '\n';
+						else if (chr == 'r')
+							chr = '\r';
+					}
+
+					buf[z++] = chr;
 				}
 
-				buf[z++] = chr;
+				// null terminator on buf
+				buf[z] = 0;
 			}
 
-			// null terminator on buf
-			buf[z] = 0;
-		}
-
-		// write into Xstr_table (for strings.tbl) or Lcl_ext_str (for tstrings.tbl)
-		if (Parsing_modular_table) {
-			if ( external && (Lcl_ext_str[index] != NULL) ) {
-				vm_free((void *) Lcl_ext_str[index]);
-				Lcl_ext_str[index] = NULL;
-			} else if ( !external && (Xstr_table[index].str != NULL) ) {
-				vm_free((void *) Xstr_table[index].str);
-				Xstr_table[index].str = NULL;
+			// write into Xstr_table (for strings.tbl) or Lcl_ext_str (for tstrings.tbl)
+			if (Parsing_modular_table) {
+				if ( external && (Lcl_ext_str[index] != NULL) ) {
+					vm_free((void *) Lcl_ext_str[index]);
+					Lcl_ext_str[index] = NULL;
+				} else if ( !external && (Xstr_table[index].str != NULL) ) {
+					vm_free((void *) Xstr_table[index].str);
+					Xstr_table[index].str = NULL;
+				}
 			}
-		}
 
-		if (external && (Lcl_ext_str[index] != NULL)) {
-			Warning(LOCATION, "Tstrings table index %d used more than once", index);
-		} else if (!external && (Xstr_table[index].str != NULL)) {
-			Warning(LOCATION, "Strings table index %d used more than once", index);
-		}
-
-		if (external) {
-			Lcl_ext_str[index] = vm_strdup(buf);
-		} else {
-			Xstr_table[index].str = vm_strdup(buf);
-		}
-
-		// the rest of this loop applies only to strings.tbl,
-		// so we can move on to the next line if we're reading from tstrings.tbl
-		if (external) {
-			continue;
-		}
-
-		// read offset information, assume 0 if nonexistant
-		if (p_offset != NULL) {
-			if (sscanf(p_offset, "%d%d", &offset_lo, &offset_hi) < num_offsets_on_this_line) {
-				// whatever is in the file ain't a proper offset
-				Error(LOCATION, "%s is corrupt", filename);
+			if (external && (Lcl_ext_str[index] != NULL)) {
+				Warning(LOCATION, "Tstrings table index %d used more than once", index);
+			} else if (!external && (Xstr_table[index].str != NULL)) {
+				Warning(LOCATION, "Strings table index %d used more than once", index);
 			}
+
+			if (external) {
+				Lcl_ext_str[index] = vm_strdup(buf);
+			} else {
+				Xstr_table[index].str = vm_strdup(buf);
+			}
+
+			// the rest of this loop applies only to strings.tbl,
+			// so we can move on to the next line if we're reading from tstrings.tbl
+			if (external) {
+				continue;
+			}
+
+			// read offset information, assume 0 if nonexistant
+			if (p_offset != NULL) {
+				if (sscanf(p_offset, "%d%d", &offset_lo, &offset_hi) < num_offsets_on_this_line) {
+					// whatever is in the file ain't a proper offset
+					Error(LOCATION, "%s is corrupt", filename);
+				}
+			}
+
+			Xstr_table[index].offset_x = offset_lo;
+
+			if (num_offsets_on_this_line == 2)
+				Xstr_table[index].offset_x_hi = offset_hi;
+			else
+				Xstr_table[index].offset_x_hi = offset_lo;
+
+			// clear out our vars
+			p_offset = NULL;
+			offset_lo = 0;
+			offset_hi = 0;
 		}
-
-		Xstr_table[index].offset_x = offset_lo;
-
-		if (num_offsets_on_this_line == 2)
-			Xstr_table[index].offset_x_hi = offset_hi;
-		else
-			Xstr_table[index].offset_x_hi = offset_lo;
-
-		// clear out our vars
-		p_offset = NULL;
-		offset_lo = 0;
-		offset_hi = 0;
+	}
+	catch (const parse::ParseException& e)
+	{
+		mprintf(("TABLES: Unable to parse 'controlconfigdefaults.tbl'!  Error message = %s.\n", e.what()));
+		return;
 	}
 }
 
@@ -504,7 +518,7 @@ ubyte lcl_get_font_index(int font_num)
 void lcl_add_dir(char *current_path)
 {
 	char last_char;
-	int path_len;
+	size_t path_len;
 
 	// if the disk extension is 0 length, don't add enything
 	if (strlen(Lcl_languages[Lcl_current_lang].lang_ext) <= 0) {
@@ -660,7 +674,7 @@ void lcl_ext_localize_sub(const char *in, char *out, size_t max_len, int *id)
 	// if the string is < 9 chars, it can't be an XSTR("",) tag, so just copy it
 	if (str_len < 9) {
 		if (str_len > max_len)
-			error_display(0, "Token too long: [%s].  Length = %i.  Max is %i.\n", in, str_len, max_len);
+			error_display(0, "Token too long: [%s].  Length = " SIZE_T_ARG ".  Max is " SIZE_T_ARG ".\n", in, str_len, max_len);
 
 		strncpy(out, in, max_len);
 
@@ -674,7 +688,7 @@ void lcl_ext_localize_sub(const char *in, char *out, size_t max_len, int *id)
 	if (strnicmp(in, "XSTR", 4)) {
 		// NOT an XSTR() tag
 		if (str_len > max_len)
-			error_display(0, "Token too long: [%s].  Length = %i.  Max is %i.\n", in, str_len, max_len);
+			error_display(0, "Token too long: [%s].  Length = " SIZE_T_ARG ".  Max is " SIZE_T_ARG ".\n", in, str_len, max_len);
 
 		strncpy(out, in, max_len);
 
@@ -687,7 +701,7 @@ void lcl_ext_localize_sub(const char *in, char *out, size_t max_len, int *id)
 	// at this point we _know_ its an XSTR() tag, so split off the strings and id sections
 	if (!lcl_ext_get_text(in, text_str)) {
 		if (str_len > max_len)
-			error_display(0, "Token too long: [%s].  Length = %i.  Max is %i.\n", in, str_len, max_len);
+			error_display(0, "Token too long: [%s].  Length = " SIZE_T_ARG ".  Max is " SIZE_T_ARG ".\n", in, str_len, max_len);
 
 		strncpy(out, in, max_len);
 
@@ -698,7 +712,7 @@ void lcl_ext_localize_sub(const char *in, char *out, size_t max_len, int *id)
 	}
 	if (!lcl_ext_get_id(in, &str_id)) {
 		if (str_len > max_len)
-			error_display(0, "Token too long: [%s].  Length = %i.  Max is %i.\n", in, str_len, max_len);
+			error_display(0, "Token too long: [%s].  Length = " SIZE_T_ARG ".  Max is " SIZE_T_ARG ".\n", in, str_len, max_len);
 
 		strncpy(out, in, max_len);
 
@@ -711,7 +725,7 @@ void lcl_ext_localize_sub(const char *in, char *out, size_t max_len, int *id)
 	// if the localization file is not open, or we're running in the default language, return the original string
 	if ( !Xstr_inited || (str_id < 0) || (Lcl_current_lang == FS2_OPEN_DEFAULT_LANGUAGE) ) {
 		if ( strlen(text_str) > max_len )
-			error_display(0, "Token too long: [%s].  Length = %i.  Max is %i.\n", text_str, strlen(text_str), max_len);
+			error_display(0, "Token too long: [%s].  Length = " SIZE_T_ARG ".  Max is " SIZE_T_ARG ".\n", text_str, strlen(text_str), max_len);
 
 		strncpy(out, text_str, max_len);
 
@@ -725,14 +739,14 @@ void lcl_ext_localize_sub(const char *in, char *out, size_t max_len, int *id)
 	if ((str_id < LCL_MAX_STRINGS) && (Lcl_ext_str[str_id] != NULL)) {
 		// copy to the outgoing string
 		if ( strlen(Lcl_ext_str[str_id]) > max_len )
-			error_display(0, "Token too long: [%s].  Length = %i.  Max is %i.\n", Lcl_ext_str[str_id], strlen(Lcl_ext_str[str_id]), max_len);
+			error_display(0, "Token too long: [%s].  Length = " SIZE_T_ARG ".  Max is " SIZE_T_ARG ".\n", Lcl_ext_str[str_id], strlen(Lcl_ext_str[str_id]), max_len);
 
 		strncpy(out, Lcl_ext_str[str_id], max_len);
 	}
 	// otherwise use what we have - probably should Int3() or assert here
 	else {
 		if ( strlen(text_str) > max_len )
-			error_display(0, "Token too long: [%s].  Length = %i.  Max is %i.\n", text_str, strlen(text_str), max_len);
+			error_display(0, "Token too long: [%s].  Length = " SIZE_T_ARG ".  Max is " SIZE_T_ARG ".\n", text_str, strlen(text_str), max_len);
 
 		if (str_id >= LCL_MAX_STRINGS)
 			error_display(0, "Invalid XSTR ID: [%d]. (Must be less than %d.)\n", str_id, LCL_MAX_STRINGS);
@@ -886,8 +900,8 @@ int lcl_get_xstr_offset(int index, int res)
 // given a valid XSTR() tag piece of text, extract the string portion, return it in out, nonzero on success
 int lcl_ext_get_text(const char *xstr, char *out)
 {
-	int str_start, str_end;
-	int str_len;
+	size_t str_start, str_end;
+	size_t str_len;
 	const char *p, *p2;
 
 	Assert(xstr != NULL);
@@ -905,7 +919,7 @@ int lcl_ext_get_text(const char *xstr, char *out)
 		str_start = p - xstr + 1;		
 	}
 	// make sure we're not about to walk past the end of the string
-	if((p - xstr) >= str_len){
+	if(static_cast<size_t>(p - xstr) >= str_len){
 		error_display(0, "Error parsing XSTR() tag %s\n", xstr);
 		return 0;
 	}
@@ -963,7 +977,7 @@ int lcl_ext_get_text(const SCP_string &xstr, SCP_string &out)
 int lcl_ext_get_id(const char *xstr, int *out)
 {
 	const char *p, *pnext;
-	int str_len;
+	size_t str_len;
 
 	Assert(xstr != NULL);
 	Assert(out != NULL);
@@ -977,7 +991,7 @@ int lcl_ext_get_id(const char *xstr, int *out)
 		return 0;
 	}
 	// make sure we're not about to walk off the end of the string
-	if((p - xstr) >= str_len){
+	if(static_cast<size_t>(p - xstr) >= str_len){
 		error_display(0, "Error parsing id# in XSTR() tag %s\n", xstr);
 		return 0;
 	}
@@ -1008,7 +1022,7 @@ int lcl_ext_get_id(const char *xstr, int *out)
 		return 0;
 	}
 	// make sure we're not about to walk off the end of the string
-	if((pnext - xstr) >= str_len){
+	if(static_cast<size_t>(pnext - xstr) >= str_len){
 		error_display(0, "Error parsing id# in XSTR() tag %s\n", xstr);
 		return 0;
 	}

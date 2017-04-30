@@ -68,7 +68,7 @@ char Default_campaign_file_name[MAX_FILENAME_LEN - 4]  = { 0 };
 static bool MC_desc = false;
 static bool MC_multiplayer = false;
 
-char *campaign_types[MAX_CAMPAIGN_TYPES] = 
+const char *campaign_types[MAX_CAMPAIGN_TYPES] =
 {
 //XSTR:OFF
 	"single",
@@ -107,7 +107,7 @@ int mission_campaign_get_info(const char *filename, char *name, int *type, int *
 	Assert( type != NULL );
 
 	strncpy(fname, filename, MAX_FILENAME_LEN - 1);
-	int fname_len = strlen(fname);
+	auto fname_len = strlen(fname);
 	if ((fname_len < 4) || stricmp(fname + fname_len - 4, FS_CAMPAIGN_FILE_EXT)){
 		strcat_s(fname, FS_CAMPAIGN_FILE_EXT);
 		fname_len += 4;
@@ -369,41 +369,41 @@ void mission_campaign_build_list(bool desc, bool sort, bool multiplayer)
  */
 void mission_campaign_get_sw_info()
 {
-	int i, count, ship_list[MAX_SHIP_CLASSES], weapon_list[MAX_WEAPON_TYPES];
+    int i, count, ship_list[MAX_SHIP_CLASSES], weapon_list[MAX_WEAPON_TYPES];
 
-	// set allowable ships to the SIF_PLAYER_SHIPs
-	memset( Campaign.ships_allowed, 0, sizeof(Campaign.ships_allowed) );
-	for (auto it = Ship_info.cbegin(); it != Ship_info.cend(); ++it ) {
-		if ( it->flags & SIF_PLAYER_SHIP )
-			Campaign.ships_allowed[std::distance(Ship_info.cbegin(), it)] = 1;
-	}
+    // set allowable ships to the SIF_PLAYER_SHIPs
+    memset(Campaign.ships_allowed, 0, sizeof(Campaign.ships_allowed));
+    for (auto it = Ship_info.cbegin(); it != Ship_info.cend(); ++it) {
+        if (it->flags[Ship::Info_Flags::Player_ship])
+            Campaign.ships_allowed[std::distance(Ship_info.cbegin(), it)] = 1;
+    }
 
-	for (i = 0; i < MAX_WEAPON_TYPES; i++ )
-		Campaign.weapons_allowed[i] = 1;
+    for (i = 0; i < MAX_WEAPON_TYPES; i++)
+        Campaign.weapons_allowed[i] = 1;
 
-	if ( optional_string("+Starting Ships:") ) {
-		for (i = 0; i < static_cast<int>(Ship_info.size()); i++ )
-			Campaign.ships_allowed[i] = 0;
+    if (optional_string("+Starting Ships:")) {
+        for (i = 0; i < static_cast<int>(Ship_info.size()); i++)
+            Campaign.ships_allowed[i] = 0;
 
-		count = stuff_int_list(ship_list, MAX_SHIP_CLASSES, SHIP_INFO_TYPE);
+        count = stuff_int_list(ship_list, MAX_SHIP_CLASSES, SHIP_INFO_TYPE);
 
-		// now set the array elements stating which ships we are allowed
-		for (i = 0; i < count; i++ ) {
-			if ( Ship_info[ship_list[i]].flags & SIF_PLAYER_SHIP )
-				Campaign.ships_allowed[ship_list[i]] = 1;
-		}
-	}
+        // now set the array elements stating which ships we are allowed
+        for (i = 0; i < count; i++) {
+            if (Ship_info[ship_list[i]].flags[Ship::Info_Flags::Player_ship])
+                Campaign.ships_allowed[ship_list[i]] = 1;
+        }
+    }
 
-	if ( optional_string("+Starting Weapons:") ) {
-		for (i = 0; i < MAX_WEAPON_TYPES; i++ )
-			Campaign.weapons_allowed[i] = 0;
+    if (optional_string("+Starting Weapons:")) {
+        for (i = 0; i < MAX_WEAPON_TYPES; i++)
+            Campaign.weapons_allowed[i] = 0;
 
-		count = stuff_int_list(weapon_list, MAX_WEAPON_TYPES, WEAPON_POOL_TYPE);
+        count = stuff_int_list(weapon_list, MAX_WEAPON_TYPES, WEAPON_POOL_TYPE);
 
-		// now set the array elements stating which ships we are allowed
-		for (i = 0; i < count; i++ )
-			Campaign.weapons_allowed[weapon_list[i]] = 1;
-	}
+        // now set the array elements stating which ships we are allowed
+        for (i = 0; i < count; i++)
+            Campaign.weapons_allowed[weapon_list[i]] = 1;
+    }
 }
 
 /**
@@ -416,7 +416,7 @@ void mission_campaign_get_sw_info()
  */
 int mission_campaign_load( char *filename, player *pl, int load_savefile, bool reset_stats )
 {
-	int len, i;
+	int i;
 	char name[NAME_LENGTH], type[NAME_LENGTH], temp[NAME_LENGTH];
 
 	if (campaign_is_ignored(filename)) {
@@ -455,7 +455,7 @@ int mission_campaign_load( char *filename, player *pl, int load_savefile, bool r
 		reset_parse();
 
 		// copy filename to campaign structure minus the extension
-		len = strlen(filename) - 4;
+		auto len = strlen(filename) - 4;
 		Assert(len < MAX_FILENAME_LEN);
 		strncpy(Campaign.filename, filename, len);
 		Campaign.filename[len] = 0;
@@ -866,12 +866,12 @@ void campaign_delete_save( char *cfn, char *pname)
 void mission_campaign_delete_all_savefiles( char *pilot_name )
 {
 	int dir_type, num_files, i;
-	char file_spec[MAX_FILENAME_LEN + 2], *ext;
+	char file_spec[MAX_FILENAME_LEN + 2];
 	char filename[1024];
 	int (*filter_save)(const char *filename);
 	SCP_vector<SCP_string> names;
 
-	ext = NOX(".csg");
+	auto ext = NOX(".csg");
 	dir_type = CF_TYPE_PLAYERS;
 
 	sprintf(file_spec, NOX("%s.*%s"), pilot_name, ext);
@@ -1070,7 +1070,7 @@ void mission_campaign_store_goals_and_events()
 
 	// copy the needed info from the Mission_goal struct to our internal structure
 	for (i = 0; i < Num_mission_events; i++ ) {
- 		if (Mission_events[i].name[0] == '\0') {
+		if (Mission_events[i].name[0] == '\0') {
 			char event_name[NAME_LENGTH];
 
 			sprintf(event_name, NOX("Event #%d"), i);
@@ -1346,7 +1346,7 @@ void mission_campaign_clear()
 		if (Campaign.missions[i].mission_branch_brief_sound != NULL) {
 			vm_free(Campaign.missions[i].mission_branch_brief_sound);
 			Campaign.missions[i].mission_branch_brief_sound = NULL;
- 		}
+		}
 
 		if ( !Fred_running ){
 			sexp_unmark_persistent(Campaign.missions[i].formula);		// free any sexpression nodes used by campaign.
@@ -1619,7 +1619,7 @@ void mission_campaign_maybe_play_movie(int type)
 	if ( !filename )
 		return;
 
-	movie_play( filename );	//Play the movie!
+	movie::play(filename);	//Play the movie!
 	cutscene_mark_viewable( filename );
 }
 
@@ -1782,9 +1782,9 @@ void mission_campaign_end_do()
 	if (!stricmp(Campaign.filename, "freespace2")) {
 		// did the supernova blow?
 		if (Supernova_status == SUPERNOVA_HIT) {
-			movie_play_two("endpart1.mve", "endprt2b.mve");			// bad ending
+			movie::play_two("endpart1.mve", "endprt2b.mve");			// bad ending
 		} else {
-			movie_play_two("endpart1.mve", "endprt2a.mve");			// good ending
+			movie::play_two("endpart1.mve", "endprt2a.mve");			// good ending
 		}
 	} else {
 		common_maybe_play_cutscene(MOVIE_END_CAMPAIGN);
@@ -1833,7 +1833,7 @@ void mission_campaign_skip_to_next(int start_game)
 			// closes out mission stuff, sets up next one
 			mission_campaign_mission_over();
 
-			if ( Campaign.next_mission == -1 || (The_mission.flags & MISSION_FLAG_END_TO_MAINHALL) ) {
+			if ( Campaign.next_mission == -1 || (The_mission.flags[Mission::Mission_Flags::End_to_mainhall]) ) {
 				// go to main hall, either the campaign is over or the FREDer requested it.
 				gameseq_post_event(GS_EVENT_MAIN_MENU);
 			} else {

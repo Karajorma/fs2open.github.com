@@ -56,7 +56,10 @@ BEGIN
     "#include ""res\\FRED.rc2""  // non-Microsoft Visual C++ edited resources\r\n"
     "#include ""afxres.rc""         // Standard components\r\n"
     "#include ""afxprint.rc""       // printing/print preview resources\r\n"
-    "#endif\0"
+    "#endif\r\n"
+    "\n"
+    "\r\n"
+    "#include ""version.rc2""\0"
 END
 
 #endif    // APSTUDIO_INVOKED
@@ -70,7 +73,9 @@ END
 // Icon with lowest ID value placed first to ensure application icon
 // remains consistent on all systems.
 IDR_MAINFRAME           ICON                    "res\\FRED.ico"
+
 IDR_FREDTYPE            ICON                    "res\\FREDDoc.ico"
+
 
 /////////////////////////////////////////////////////////////////////////////
 //
@@ -78,37 +83,67 @@ IDR_FREDTYPE            ICON                    "res\\FREDDoc.ico"
 //
 
 IDR_MAINFRAME           BITMAP                  "res\\Toolbar.bmp"
+
 IDB_OPERATOR            BITMAP                  "res\\bitmap1.bmp"
+
 IDB_DATA                BITMAP                  "res\\data.bmp"
+
 IDB_ROOT                BITMAP                  "res\\root.bmp"
+
 IDB_CHAINED             BITMAP                  "res\\chained.bmp"
+
 IDB_PLAY                BITMAP                  "res\\bmp00001.bmp"
+
 IDB_ROOT_DIRECTIVE      BITMAP                  "res\\root_directive.bmp"
+
 IDB_CHAINED_DIRECTIVE   BITMAP                  "res\\chained_directive.bmp"
+
 IDB_GREEN_DOT           BITMAP                  "res\\green_do.bmp"
+
 IDB_BLACK_DOT           BITMAP                  "res\\black_do.bmp"
+
 IDB_VARIABLE            BITMAP                  "res\\variable.bmp"
+
 IDB_DATA_05             BITMAP                  "res\\data05.bmp"
+
 IDB_DATA_00             BITMAP                  "res\\data00.bmp"
+
 IDB_DATA_10             BITMAP                  "res\\data10.bmp"
+
 IDB_DATA_15             BITMAP                  "res\\data15.bmp"
+
 IDB_DATA_20             BITMAP                  "res\\data20.bmp"
+
 IDB_DATA_25             BITMAP                  "res\\data25.bmp"
+
 IDB_DATA_30             BITMAP                  "res\\data30.bmp"
+
 IDB_DATA_35             BITMAP                  "res\\data35.bmp"
+
 IDB_DATA_40             BITMAP                  "res\\data40.bmp"
+
 IDB_DATA_45             BITMAP                  "res\\data45.bmp"
+
 IDB_DATA_50             BITMAP                  "res\\data50.bmp"
+
 IDB_DATA_55             BITMAP                  "res\\data55.bmp"
+
 IDB_DATA_60             BITMAP                  "res\\data60.bmp"
+
 IDB_DATA_65             BITMAP                  "res\\data65.bmp"
+
 IDB_DATA_70             BITMAP                  "res\\data70.bmp"
+
 IDB_DATA_75             BITMAP                  "res\\data75.bmp"
+
 IDB_DATA_80             BITMAP                  "res\\data80.bmp"
+
 IDB_DATA_85             BITMAP                  "res\\data85.bmp"
+
 IDB_DATA_90             BITMAP                  "res\\data90.bmp"
+
 IDB_DATA_95             BITMAP                  "res\\data95.bmp"
-IDB_CONTAINER           BITMAP                  "res\\container.bmp"
+
 
 /////////////////////////////////////////////////////////////////////////////
 //
@@ -437,12 +472,6 @@ BEGIN
         BEGIN
             MENUITEM "Placeholder",                 ID_PLACEHOLDER, GRAYED
         END
-        MENUITEM SEPARATOR
-        MENUITEM "Edit Containers",             ID_EDIT_SEXP_TREE_EDIT_CONTAINERS
-        POPUP "Replace Container"
-        BEGIN
-            MENUITEM "Placeholder",                 ID_PLACEHOLDER
-        END
     END
 END
 
@@ -629,7 +658,7 @@ FONT 8, "MS Sans Serif"
 BEGIN
     ICON            IDR_MAINFRAME,IDC_STATIC,10,17,20,20,SS_REALSIZEIMAGE
     LTEXT           "FRED2_OPEN - FreeSpace Editor, Version 3.7.5 OpenGL",IDC_STATIC,39,8,184,10,SS_NOPREFIX
-    LTEXT           "Copyright ? 1999 Volition, Inc.  All Rights Reserved",IDC_STATIC,39,17,164,8
+    LTEXT           "Copyright � 1999 Volition, Inc.  All Rights Reserved",IDC_STATIC,39,17,164,8
     DEFPUSHBUTTON   "OK",IDOK,229,7,48,14,WS_GROUP
     LTEXT           """Fred2 is the omega of all giant unwieldy pieces of code. Its big, its horrifying, and it just doesn't care. View it at your own risk."" - Dave Baranec",IDC_STATIC,39,62,238,20
     LTEXT           "Ported to OGL by RT",IDC_STATIC,39,40,68,8
@@ -2106,45 +2135,6 @@ END
 
 /////////////////////////////////////////////////////////////////////////////
 //
-// Version
-//
-
-VS_VERSION_INFO VERSIONINFO
- FILEVERSION 3,7,1,0
- PRODUCTVERSION 3,7,1,0
- FILEFLAGSMASK 0x3fL
-#ifdef _DEBUG
- FILEFLAGS 0x1L
-#else
- FILEFLAGS 0x0L
-#endif
- FILEOS 0x4L
- FILETYPE 0x1L
- FILESUBTYPE 0x0L
-BEGIN
-    BLOCK "StringFileInfo"
-    BEGIN
-        BLOCK "040904b0"
-        BEGIN
-            VALUE "CompanyName", "Volition Inc."
-            VALUE "FileDescription", "Fred 2 Open"
-            VALUE "FileVersion", "3.7.5.000000"
-            VALUE "InternalName", "Fred 2 Open"
-            VALUE "LegalCopyright", "Copyright ? 1998"
-            VALUE "OriginalFilename", "fred2.exe"
-            VALUE "ProductName", "Fred 2 Open"
-            VALUE "ProductVersion", "3.7.5"
-        END
-    END
-    BLOCK "VarFileInfo"
-    BEGIN
-        VALUE "Translation", 0x409, 1200
-    END
-END
-
-
-/////////////////////////////////////////////////////////////////////////////
-//
 // DESIGNINFO
 //
 
@@ -2696,7 +2686,9 @@ END
 //
 
 IDC_CURSOR1             CURSOR                  "res\\cursor1.cur"
+
 IDC_CURSOR2             CURSOR                  "res\\cursor2.cur"
+
 
 /////////////////////////////////////////////////////////////////////////////
 //
@@ -3029,47 +3021,6 @@ BEGIN
     PUSHBUTTON      "Insert",IDC_ALT_CLASS_INSERT,58,177,50,17
 END
 
-IDD_EDIT_CONTAINER DIALOGEX 0, 0, 441, 267
-STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
-CAPTION "Edit Containers"
-FONT 8, "MS Shell Dlg", 400, 0, 0x1
-BEGIN
-    DEFPUSHBUTTON   "OK",IDOK,384,7,50,14
-    PUSHBUTTON      "Cancel",IDCANCEL,384,25,50,14
-    CONTROL         "List",IDC_CONTAINER_LIST,"Button",BS_AUTORADIOBUTTON | WS_GROUP,160,25,27,10
-    CONTROL         "Map",IDC_CONTAINER_MAP,"Button",BS_AUTORADIOBUTTON,219,25,29,10
-    CONTROL         "String",IDC_CONTAINER_STRING,"Button",BS_AUTORADIOBUTTON | WS_GROUP,285,25,35,10
-    CONTROL         "Number",IDC_CONTAINER_NUMBER,"Button",BS_AUTORADIOBUTTON,325,25,41,10
-    GROUPBOX        "Container Type",IDC_STATIC,152,14,116,25
-    LISTBOX         IDC_CONTAINER_DATA_LISTER,133,47,289,206,LBS_NOINTEGRALHEIGHT | WS_VSCROLL | WS_TABSTOP
-    LTEXT           "Container Data",IDC_STATIC,15,105,50,8
-    LTEXT           "Key",IDC_STATIC,17,46,13,8
-    EDITTEXT        IDC_CONTAINER_KEY,17,58,112,14,ES_AUTOHSCROLL | WS_DISABLED
-    EDITTEXT        IDC_CONTAINER_DATA,15,118,112,14,ES_AUTOHSCROLL | WS_DISABLED
-    GROUPBOX        "Argument Type",IDC_STATIC,276,14,96,25
-    PUSHBUTTON      "Add",IDC_CONTAINER_ADD,15,153,37,15
-    PUSHBUTTON      "Insert",IDC_CONTAINER_INSERT,53,153,37,15
-    PUSHBUTTON      "Remove",IDC_CONTAINER_REMOVE,91,153,35,15
-    PUSHBUTTON      "Update",IDC_CONTAINER_UPDATE,15,135,112,15
-    COMBOBOX        IDC_CURRENT_CONTAINER_NAME,14,25,133,176,CBS_DROPDOWN | WS_DISABLED | WS_VSCROLL | WS_TABSTOP
-    LTEXT           "Container Name",IDC_STATIC,14,15,52,8
-    PUSHBUTTON      "Add Container",IDC_ADD_NEW_CONTAINER,14,211,112,14
-    GROUPBOX        "Key Type",IDC_KEY_TYPE,17,76,108,27,WS_DISABLED
-    CONTROL         "String",IDC_STRING_KEYS,"Button",BS_AUTORADIOBUTTON | WS_DISABLED,23,87,35,10
-    CONTROL         "Number",IDC_NUMBER_KEYS,"Button",BS_AUTORADIOBUTTON | WS_DISABLED,73,87,41,10,0,HIDC_NUMBER_KEYS
-    PUSHBUTTON      "Delete Container",IDC_DELETE_CONTAINER,14,240,112,13,WS_DISABLED
-END
-
-IDD_ADD_NEW_CONTAINER DIALOGEX 0, 0, 138, 70
-STYLE DS_SETFONT | DS_MODALFRAME | DS_FIXEDSYS | WS_POPUP | WS_CAPTION | WS_SYSMENU
-CAPTION "Add New Container"
-FONT 8, "MS Shell Dlg", 400, 0, 0x1
-BEGIN
-    DEFPUSHBUTTON   "OK",IDOK,14,36,50,14
-    PUSHBUTTON      "Cancel",IDCANCEL,72,36,50,14
-    EDITTEXT        IDC_NEW_CONTAINER_NAME,15,14,102,14,ES_AUTOHSCROLL
-END
-
 
 /////////////////////////////////////////////////////////////////////////////
 //
@@ -3085,22 +3036,6 @@ BEGIN
         RIGHTMARGIN, 305
         TOPMARGIN, 7
         BOTTOMMARGIN, 205
-    END
-
-    IDD_EDIT_CONTAINER, DIALOG
-    BEGIN
-        LEFTMARGIN, 7
-        RIGHTMARGIN, 434
-        TOPMARGIN, 7
-        BOTTOMMARGIN, 260
-    END
-
-    IDD_ADD_NEW_CONTAINER, DIALOG
-    BEGIN
-        LEFTMARGIN, 7
-        RIGHTMARGIN, 131
-        TOPMARGIN, 7
-        BOTTOMMARGIN, 63
     END
 END
 #endif    // APSTUDIO_INVOKED
@@ -3129,5 +3064,9 @@ LANGUAGE 9, 1
 #include "afxres.rc"         // Standard components
 #include "afxprint.rc"       // printing/print preview resources
 #endif
+
+
+#include "version.rc2"
 /////////////////////////////////////////////////////////////////////////////
 #endif    // not APSTUDIO_INVOKED
+

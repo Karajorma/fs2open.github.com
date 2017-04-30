@@ -39,7 +39,7 @@
 
 #define MAX_TRIGGER_ANIMATION_TYPES			12
 
-extern char *Animation_type_names[MAX_TRIGGER_ANIMATION_TYPES];
+extern const char *Animation_type_names[MAX_TRIGGER_ANIMATION_TYPES];
 
 
 // Model Animation Position settings
@@ -139,7 +139,7 @@ extern SCP_vector<triggered_rotation> Triggered_rotations;
 
 // functions...
 
-struct model_subsystem;
+class model_subsystem;
 class ship_subsys;
 class ship;
 class ship_info;

@@ -10,14 +10,15 @@
 #include "asteroid/asteroid.h"
 #include "cmdline/cmdline.h"
 #include "debris/debris.h"
-#include "graphics/gropengldraw.h"
-#include "graphics/gropengltnl.h"
+#include "graphics/opengl/gropengldraw.h"
+#include "graphics/opengl/gropengltnl.h"
 #include "graphics/shadows.h"
 #include "lighting/lighting.h"
 #include "math/vecmat.h"
 #include "model/model.h"
 #include "model/modelrender.h"
 #include "render/3d.h"
+#include "tracing/tracing.h"
 
 extern vec3d check_offsets[8];
 
@@ -177,14 +178,23 @@ void shadows_debug_show_frustum(matrix* orient, vec3d *pos, float fov, float asp
 	vm_vec_add2(&far_bottom_left, pos);
 
 	gr_set_color(0, 255, 255);
-	g3_draw_htl_line(&near_bottom_left, &near_bottom_right);
-	g3_draw_htl_line(&near_bottom_right, &near_top_right);
-	g3_draw_htl_line(&near_bottom_right, &near_top_left);
-	g3_draw_htl_line(&near_top_right, &near_top_left);
-	g3_draw_htl_line(&far_top_left, &far_top_right);
-	g3_draw_htl_line(&far_top_right, &far_bottom_right);
-	g3_draw_htl_line(&far_bottom_right, &far_bottom_left);
-	g3_draw_htl_line(&far_bottom_left, &far_top_left);
+// 	g3_draw_htl_line(&near_bottom_left, &near_bottom_right);
+// 	g3_draw_htl_line(&near_bottom_right, &near_top_right);
+// 	g3_draw_htl_line(&near_bottom_right, &near_top_left);
+// 	g3_draw_htl_line(&near_top_right, &near_top_left);
+// 	g3_draw_htl_line(&far_top_left, &far_top_right);
+// 	g3_draw_htl_line(&far_top_right, &far_bottom_right);
+// 	g3_draw_htl_line(&far_bottom_right, &far_bottom_left);
+// 	g3_draw_htl_line(&far_bottom_left, &far_top_left);
+
+	g3_render_line_3d(true, &near_bottom_left, &near_bottom_right);
+ 	g3_render_line_3d(true, &near_bottom_right, &near_top_right);
+ 	g3_render_line_3d(true, &near_bottom_right, &near_top_left);
+ 	g3_render_line_3d(true, &near_top_right, &near_top_left);
+ 	g3_render_line_3d(true, &far_top_left, &far_top_right);
+ 	g3_render_line_3d(true, &far_top_right, &far_bottom_right);
+ 	g3_render_line_3d(true, &far_bottom_right, &far_bottom_left);
+ 	g3_render_line_3d(true, &far_bottom_left, &far_top_left);
 }
 
 void shadows_construct_light_frustum(light_frustum_info *shadow_data, matrix *light_matrix, matrix *orient, vec3d *pos, float fov, float aspect, float z_near, float z_far)
@@ -390,6 +400,9 @@ void shadows_end_render()
 
 void shadows_render_all(float fov, matrix *eye_orient, vec3d *eye_pos)
 {
+	GR_DEBUG_SCOPE("Render shadows");
+	TRACE_SCOPE(tracing::BuildShadowMap);
+
 	if ( Static_light.empty() ) {
 		return;
 	}
@@ -409,7 +422,7 @@ void shadows_render_all(float fov, matrix *eye_orient, vec3d *eye_pos)
 	// maybe we could use a more programmatic algorithim? 
 	matrix light_matrix = shadows_start_render(eye_orient, eye_pos, fov, gr_screen.clip_aspect, 200.0f, 600.0f, 2500.0f, 8000.0f);
 
-	draw_list scene;
+	model_draw_list scene;
 	object *objp = Objects;
 
 	for ( int i = 0; i <= Highest_object_index; i++, objp++ ) {
@@ -467,7 +480,7 @@ void shadows_render_all(float fov, matrix *eye_orient, vec3d *eye_pos)
 	}
 
 	scene.init_render();
-	scene.render_all(GR_ZBUFF_FULL);
+	scene.render_all(ZBUFFER_TYPE_FULL);
 
 	shadows_end_render();
 
@@ -476,9 +489,6 @@ void shadows_render_all(float fov, matrix *eye_orient, vec3d *eye_pos)
 	gr_set_cull(0);
 
 	gr_clear_states();
-	gr_set_buffer(-1);
-
-	GL_state.Texture.DisableAll();
 
 	gr_set_proj_matrix(Proj_fov, gr_screen.clip_aspect, Min_draw_distance, Max_draw_distance);
 	gr_set_view_matrix(&Eye_position, &Eye_matrix);

@@ -19,6 +19,7 @@
 #include "nebula/neblightning.h"
 #include "network/multi.h"
 #include "network/multimsgs.h"
+#include "graphics/material.h"
 #include "parse/parselo.h"
 #include "render/3d.h"
 #include "weapon/emp.h"
@@ -321,11 +322,13 @@ void nebl_set_storm(char *name)
 // render all lightning bolts
 void nebl_render_all()
 {
+	GR_DEBUG_SCOPE("Nebula render all");
+
 	l_bolt *b;
 	bolt_type *bi;
 
 	// no lightning in non-nebula missions
-	if(!(The_mission.flags & MISSION_FLAG_FULLNEB)){
+	if(!(The_mission.flags[Mission::Mission_Flags::Fullneb])){
 		return;
 	}
 
@@ -459,7 +462,7 @@ void nebl_process()
 	uint num_bolts, idx;
 
 	// non-nebula mission
-	if(!(The_mission.flags & MISSION_FLAG_FULLNEB)){
+	if(!(The_mission.flags[Mission::Mission_Flags::Fullneb])){
 		return;
 	}		
 	
@@ -570,7 +573,7 @@ void nebl_bolt(size_t type, vec3d *start, vec3d *strike)
 	bolt_type *bi;
 	float bolt_len;
 
-	if(!(The_mission.flags & MISSION_FLAG_FULLNEB)){
+	if(!(The_mission.flags[Mission::Mission_Flags::Fullneb])){
 		return;
 	}
 
@@ -644,7 +647,7 @@ void nebl_bolt(size_t type, vec3d *start, vec3d *strike)
 
 	// if i'm a multiplayer master, send a bolt packet
 	if(MULTIPLAYER_MASTER){
-		send_lightning_packet(type, start, strike);
+		send_lightning_packet((int)type, start, strike);
 	}
 }
 
@@ -868,9 +871,10 @@ void nebl_render_section(bolt_type *bi, l_section *a, l_section *b)
 	vertex v[4];
 	vertex *verts[4] = {&v[0], &v[1], &v[2], &v[3]};
 
-	// Sets mode.  Returns previous mode.
-	gr_zbuffer_set(GR_ZBUFF_FULL);	
+	material material_params;
 
+	material_set_unlit_emissive(&material_params, bi->texture, Nebl_alpha, 2.0f);
+	
 	// draw some stuff
 	for(size_t idx=0; idx<2; idx++){		
 		v[0] = a->vex[idx];		
@@ -886,8 +890,7 @@ void nebl_render_section(bolt_type *bi, l_section *a, l_section *b)
 		v[3].texture_position.u = 0.0f; v[3].texture_position.v = 1.0f;
 
 		// draw
-		gr_set_bitmap(bi->texture, GR_ALPHABLEND_FILTER, GR_BITBLT_MODE_NORMAL, Nebl_alpha);
-		g3_draw_poly(4, verts, TMAP_FLAG_TEXTURED | TMAP_FLAG_CORRECT | TMAP_HTL_3D_UNLIT | TMAP_FLAG_EMISSIVE);		
+		g3_render_primitives_textured(&material_params, v, 4, PRIM_TYPE_TRIFAN, false);
 	}
 
 	// draw
@@ -903,8 +906,7 @@ void nebl_render_section(bolt_type *bi, l_section *a, l_section *b)
 	v[3] = b->vex[2];		
 	v[3].texture_position.u = 0.0f; v[3].texture_position.v = 1.0f;
 
-	gr_set_bitmap(bi->texture, GR_ALPHABLEND_FILTER, GR_BITBLT_MODE_NORMAL, Nebl_alpha);
-	g3_draw_poly(4, verts, TMAP_FLAG_TEXTURED | TMAP_FLAG_CORRECT | TMAP_HTL_3D_UNLIT | TMAP_FLAG_EMISSIVE);	
+	g3_render_primitives_textured(&material_params, v, 4, PRIM_TYPE_TRIFAN, false);
 
 	// draw the glow beam	
 	verts[0] = &a->glow_vex[0];
@@ -919,8 +921,7 @@ void nebl_render_section(bolt_type *bi, l_section *a, l_section *b)
 	verts[3] = &b->glow_vex[0];
 	verts[3]->texture_position.v = 0.0f; verts[3]->texture_position.u = 1.0f;
 
-	gr_set_bitmap(bi->glow, GR_ALPHABLEND_FILTER, GR_BITBLT_MODE_NORMAL, Nebl_glow_alpha);
-	g3_draw_poly(4, verts, TMAP_FLAG_TEXTURED | TMAP_FLAG_CORRECT | TMAP_HTL_3D_UNLIT | TMAP_FLAG_EMISSIVE);	
+	g3_render_primitives_textured(&material_params, v, 4, PRIM_TYPE_TRIFAN, false);
 }
 
 // generate a section

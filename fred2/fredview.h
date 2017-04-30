@@ -55,7 +55,7 @@ public:
 
 	static CFREDView *GetView();
 	
-LONG OnGoodbye(UINT wParam, LONG lParam);
+	LRESULT OnGoodbye(WPARAM wParam, LPARAM lParam);
 // LONG OnMenuPopupShips(CWnd *pWnd, CPoint point);
 // LONG OnMenuPopupShips(UINT wParam, LONG lParam);
 
@@ -77,7 +77,6 @@ public:
 	public:
 	virtual BOOL PreCreateWindow(CREATESTRUCT& cs);
 	virtual BOOL OnCmdMsg(UINT nID, int nCode, void* pExtra, AFX_CMDHANDLERINFO* pHandlerInfo);
-	virtual void OnInitialUpdate();
 	virtual BOOL DestroyWindow();
 	protected:
 	virtual BOOL OnPreparePrinting(CPrintInfo* pInfo);
@@ -313,9 +312,9 @@ protected:
 	void OnShowIFF(int iff);
 	void OnUpdateShowIFF(int iff, CCmdUI* pCmdUI);
 
-// LONG OnMenuPopupShips(CWnd *pWnd, CPoint point);
-LONG OnMenuPopupShips(UINT wParam, LONG lParam);
-LONG OnMenuPopupEdit(UINT wParam, LONG lParam);
+	// LONG OnMenuPopupShips(CWnd *pWnd, CPoint point);
+	LRESULT OnMenuPopupShips(WPARAM wParam, LPARAM lParam);
+	LRESULT OnMenuPopupEdit(WPARAM wParam, LPARAM lParam);
 
 	DECLARE_MESSAGE_MAP()
 };

@@ -29,12 +29,13 @@
 #include "io/timer.h"
 #include "jpgutils/jpgutils.h"
 #include "network/multiutil.h"
-#include "palman/palman.h"
 #include "parse/parselo.h"
 #include "pcxutils/pcxutils.h"
 #include "pngutils/pngutils.h"
 #include "ship/ship.h"
 #include "tgautils/tgautils.h"
+#include "tracing/Monitor.h"
+#include "tracing/tracing.h"
 
 #include <ctype.h>
 #include <limits.h>
@@ -55,7 +56,6 @@ MONITOR(SizeBitmapPage)
 
 // --------------------------------------------------------------------------------------------------------------------
 // Definition of public variables (declared as extern in bmpman.h).
-int UNLITMAP = -1;
 int GLOWMAP = -1;
 int SPECMAP = -1;
 int SPECGLOSSMAP = -1;
@@ -65,7 +65,7 @@ int HEIGHTMAP = -1;
 int MISCMAP = -1;
 int AMBIENTMAP = -1;
 
-int bm_texture_ram = 0;
+size_t bm_texture_ram = 0;
 int Bm_paging = 0;
 
 // Extension type lists
@@ -158,8 +158,8 @@ float bitmap_lookup::get_channel_red(float u, float v)
 {
 	Assert( Bitmap_data != NULL );
 
-	CLAMP(u, 0.0, 1.0f);
-	CLAMP(v, 0.0, 1.0f);
+	CLAMP(u, 0.0f, 1.0f);
+	CLAMP(v, 0.0f, 1.0f);
 
 	int x = fl2i(map_texture_address(u) * (Width-1));
 	int y = fl2i(map_texture_address(v) * (Height-1));
@@ -419,7 +419,7 @@ DCF(bmpman, "Shows/changes bitmap caching parameters and usage") {
 	}
 
 	if (dc_optional_string_either("status", "--status") || dc_optional_string_either("?", "--?")) {
-		dc_printf("Total RAM usage: %d bytes\n", bm_texture_ram);
+		dc_printf("Total RAM usage: " SIZE_T_ARG " bytes\n", bm_texture_ram);
 
 		if (Bm_max_ram > 1024 * 1024) {
 			dc_printf("\tMax RAM allowed: %.1f MB\n", i2fl(Bm_max_ram) / (1024.0f*1024.0f));
@@ -435,14 +435,14 @@ DCF(bmpman, "Shows/changes bitmap caching parameters and usage") {
 
 
 	if (dc_optional_string("flush")) {
-		dc_printf("Total RAM usage before flush: %d bytes\n", bm_texture_ram);
+		dc_printf("Total RAM usage before flush: " SIZE_T_ARG " bytes\n", bm_texture_ram);
 		int i;
 		for (i = 0; i < MAX_BITMAPS; i++) {
 			if (bm_bitmaps[i].type != BM_TYPE_NONE) {
 				bm_free_data(i);
 			}
 		}
-		dc_printf("Total RAM after flush: %d bytes\n", bm_texture_ram);
+		dc_printf("Total RAM after flush: " SIZE_T_ARG " bytes\n", bm_texture_ram);
 	} else if (dc_optional_string("ram")) {
 		dc_stuff_int(&Bm_max_ram);
 
@@ -525,6 +525,7 @@ int bm_create(int bpp, int w, int h, void *data, int flags) {
 	bm_bitmaps[n].bm.h = (short)h;
 	bm_bitmaps[n].bm.rowsize = (short)w;
 	bm_bitmaps[n].bm.bpp = (ubyte)bpp;
+	bm_bitmaps[n].bm.true_bpp = (ubyte)bpp;
 	bm_bitmaps[n].bm.flags = (ubyte)flags;
 	bm_bitmaps[n].bm.data = 0;
 	bm_bitmaps[n].bm.palette = NULL;
@@ -1099,7 +1100,7 @@ int bm_is_valid(int handle) {
 //			c_type		= output for an updated BM_TYPE_*
 //			mm_lvl		= number of mipmap levels for the image
 //			size		= size of the data contained in the image
-static int bm_load_info(BM_TYPE type, int n, const char *filename, CFILE *img_cfp, int *w, int *h, int *bpp, BM_TYPE *c_type, int *mm_lvl, int *size)
+static int bm_load_info(BM_TYPE type, int n, const char *filename, CFILE *img_cfp, int *w, int *h, int *bpp, BM_TYPE *c_type, int *mm_lvl, size_t *size)
 {
 	int dds_ct;
 
@@ -1194,7 +1195,8 @@ int bm_load(const char *real_filename) {
 	int i, free_slot = -1;
 	int w, h, bpp = 8;
 	int rc = 0;
-	int bm_size = 0, mm_lvl = 0;
+	size_t bm_size = 0;
+	int mm_lvl = 0;
 	char filename[MAX_FILENAME_LEN];
 	BM_TYPE type = BM_TYPE_NONE;
 	BM_TYPE c_type = BM_TYPE_NONE;
@@ -1399,8 +1401,6 @@ static int bm_load_image_data(const char *filename, int handle, int bitmapnum, i
 	bitmap_entry *be = &bm_bitmaps[bitmapnum];
 	bitmap *bmp = &be->bm;
 
-	Assert(!Is_standalone);
-
 	if (bmp->true_bpp > bpp)
 		true_bpp = bmp->true_bpp;
 	else
@@ -1505,7 +1505,8 @@ int bm_load_animation(const char *real_filename, int *nframes, int *fps, int *ke
 	float anim_total_time = 0.0f;
 	int anim_width = 0, anim_height = 0;
 	BM_TYPE type = BM_TYPE_NONE, eff_type = BM_TYPE_NONE, c_type = BM_TYPE_NONE;
-	int bpp = 0, mm_lvl = 0, img_size = 0;
+	int bpp = 0, mm_lvl = 0;
+	size_t img_size = 0;
 	char clean_name[MAX_FILENAME_LEN];
 
 	if (!bm_inited)
@@ -1866,7 +1867,7 @@ int bm_load_sub_fast(const char *real_filename, int *handle, int dir_type, bool 
 
 int bm_load_sub_slow(const char *real_filename, const int num_ext, const char **ext_list, CFILE **img_cfp, int dir_type) {
 	char full_path[MAX_PATH];
-	int size = 0, offset = 0;
+	size_t size = 0, offset = 0;
 	int rval = -1;
 
 	rval = cf_find_file_location_ext(real_filename, num_ext, ext_list, dir_type, sizeof(full_path) - 1, full_path, &size, &offset, 0);
@@ -2158,7 +2159,7 @@ void bm_lock_apng(int handle, int bitmapnum, bitmap_entry *be, bitmap *bmp, int 
 		cumulative_frame_delay += the_apng->frame.delay;
 		be->info.ani.apng.frame_delay = cumulative_frame_delay;
 
-		nprintf(("apng", "locking apng frame: %s (%i|%i|%i) (%f) %lu\n", be->filename, bpp, bmp->bpp, bm->true_bpp, be->info.ani.apng.frame_delay, be->mem_taken));
+		nprintf(("apng", "locking apng frame: %s (%i|%i|%i) (%f) " SIZE_T_ARG "\n", be->filename, bpp, bmp->bpp, bm->true_bpp, be->info.ani.apng.frame_delay, be->mem_taken));
 	}
 }
 
@@ -2279,7 +2280,7 @@ void bm_lock_pcx(int handle, int bitmapnum, bitmap_entry *be, bitmap *bmp, int b
 	data = (ubyte *)bm_malloc(bitmapnum, be->mem_taken);
 	bmp->bpp = bpp;
 	bmp->data = (ptr_u)data;
-	bmp->palette = (bpp == 8) ? gr_palette : NULL;
+	bmp->palette = NULL;
 	memset(data, 0, be->mem_taken);
 
 	Assert(&be->bm == bmp);
@@ -2522,10 +2523,10 @@ int bm_make_render_target(int width, int height, int flags) {
 	return bm_bitmaps[n].handle;
 }
 
-void *bm_malloc(int n, int size) {
+void *bm_malloc(int n, size_t size) {
 	Assert((n >= 0) && (n < MAX_BITMAPS));
 
-	if (size <= 0)
+	if (size == 0)
 		return NULL;
 
 #ifdef BMPMAN_NDEBUG
@@ -2577,6 +2578,8 @@ void bm_page_in_start() {
 }
 
 void bm_page_in_stop() {
+	TRACE_SCOPE(tracing::PageInStop);
+
 	int i;
 
 #ifndef NDEBUG
@@ -2593,6 +2596,7 @@ void bm_page_in_stop() {
 	for (i = 0; i < MAX_BITMAPS; i++) {
 		if ((bm_bitmaps[i].type != BM_TYPE_NONE) && (bm_bitmaps[i].type != BM_TYPE_RENDER_TARGET_DYNAMIC) && (bm_bitmaps[i].type != BM_TYPE_RENDER_TARGET_STATIC)) {
 			if (bm_bitmaps[i].preloaded) {
+				TRACE_SCOPE(tracing::PageInSingleBitmap);
 				if (bm_preloading) {
 					if (!gr_preload(bm_bitmaps[i].handle, (bm_bitmaps[i].preloaded == 2))) {
 						mprintf(("Out of VRAM.  Done preloading.\n"));
@@ -2994,6 +2998,8 @@ void bm_set_low_mem(int mode) {
 }
 
 bool bm_set_render_target(int handle, int face) {
+	GR_DEBUG_SCOPE("Set render target");
+
 	int n = handle % MAX_BITMAPS;
 
 	if (n >= 0) {
@@ -3076,6 +3082,10 @@ bool bm_set_render_target(int handle, int face) {
 int bm_unload(int handle, int clear_render_targets, bool nodebug) {
 	bitmap_entry *be;
 	bitmap *bmp;
+
+	if (handle == -1) {
+		return -1;
+	}
 
 	int n = handle % MAX_BITMAPS;
 
@@ -3211,10 +3221,9 @@ void bm_unlock(int handle) {
 	Assert(be->ref_count >= 0);		// Trying to unlock data more times than lock was called!!!
 }
 
-void bm_update_memory_used(int n, int size)
+void bm_update_memory_used(int n, size_t size)
 {
 	Assert( (n >= 0) && (n < MAX_BITMAPS) );
-	Assert( size >= 0 );
 
 #ifdef BMPMAN_NDEBUG
 	Assert( bm_bitmaps[n].data_size == 0 );

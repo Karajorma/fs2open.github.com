@@ -5,19 +5,18 @@ configuration:
 clone_depth: 10
 environment:
   matrix:
-    - VS_VERSION: 12
+    - BuildID: 0
       CMAKE_GENERATOR: Visual Studio 12 2013
       PlatformToolset: v120_xp
-    - VS_VERSION: 14
-      CMAKE_GENERATOR: Visual Studio 14 2015
+    - BuildID: 1
+      CMAKE_GENERATOR: Visual Studio 14 2015 Win64
       PlatformToolset: v140_xp
 before_build:
   - git submodule update --init --recursive
-  - ps: . $Env:APPVEYOR_BUILD_FOLDER/ci/appveyor/check_release.ps1
-  - ps: . $Env:APPVEYOR_BUILD_FOLDER/ci/appveyor/before_build.ps1
 build_script:
   - ps: . $Env:APPVEYOR_BUILD_FOLDER/ci/appveyor/build.ps1
-
+test_script:
+  - ps: . $Env:APPVEYOR_BUILD_FOLDER/ci/appveyor/test.ps1
 
 deploy:
     - provider: GitHub
@@ -26,15 +25,25 @@ deploy:
       on:
           ReleaseBuild: true        # deploy on release push only
 
-    - provider: BinTray
-      username: sirknightly
-      api_key:
-          secure: pYWqfiZhIWvFYdjVWPXNaHobmnkXIWa4+LwoiyMTEiu4Z0CiCAW0ZrMfTKVkORKz
-      subject: scp-fs2open
-      repo: FSO
-      package: nightly
-      version: $(VersionName)
-      publish: true
-      override: true
+    - provider: FTP
+      protocol: sftp
+      host: scp.indiegames.us
+      username:
+        secure: SFivQZfatqWHXK1ijYK3GQ==
+      password:
+        secure: q6Zk/412o1ri+NEya1dl1Q==
+      folder: public_html/builds/nightly/$(VersionName)
+      on:
+          NightlyBuild: true        # deploy on nightly push only
+
+    - provider: FTP
+      protocol: ftp
+      host: swc.fs2downloads.com
+      username: 
+        secure: EXg2ADoKzMduZF90ip2Q0g==
+      password:
+        secure: x0LL0uY9yBAQ7JTARhQ6AA==
+      folder: swc.fs2downloads.com/builds/nightly/$(VersionName)
+      beta: true
       on:
           NightlyBuild: true        # deploy on nightly push only

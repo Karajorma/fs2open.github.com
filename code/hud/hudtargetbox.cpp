@@ -14,7 +14,7 @@
 #include "debris/debris.h"
 #include "freespace.h"
 #include "gamesnd/gamesnd.h"
-#include "graphics/gropenglshader.h"
+#include "graphics/opengl/gropenglshader.h"
 #include "hud/hudbrackets.h"
 #include "hud/hudtargetbox.h"
 #include "iff_defs/iff_defs.h"
@@ -66,7 +66,7 @@ extern int Show_target_weapons;
 #endif
 
 // used to print out + or - after target distance and speed
-char* modifiers[] = {
+const  char* modifiers[] = {
 //XSTR:OFF
 "+",
 "-",
@@ -520,7 +520,6 @@ void HudGaugeTargetBox::renderTargetSetup(vec3d *camera_eye, matrix *camera_orie
 	gr_set_view_matrix(&Eye_position, &Eye_matrix);
 }
 
-extern bool Interp_desaturate;
 void HudGaugeTargetBox::renderTargetShip(object *target_objp)
 {
 	vec3d		obj_pos = ZERO_VECTOR;
@@ -621,7 +620,7 @@ void HudGaugeTargetBox::renderTargetShip(object *target_objp)
 
 		// set glowmap flag here since model_render (etc) require an objnum to handle glowmaps
 		// if we did pass the objnum, we'd also have thrusters drawn in the targetbox
-		if (target_shipp->flags2 & SF2_GLOWMAPS_DISABLED) {
+		if (target_shipp->flags[Ship::Ship_Flags::Glowmaps_disabled]) {
 			flags |= MR_NO_GLOWMAPS;
 		}
 
@@ -636,7 +635,6 @@ void HudGaugeTargetBox::renderTargetShip(object *target_objp)
 			model_render_immediate( &render_info, target_sip->model_num, &target_objp->orient, &obj_pos);
 		}
 
-		Interp_desaturate = false;
 		Glowpoint_override = false;
 
 		if ( Monitor_mask >= 0 ) {
@@ -778,7 +776,7 @@ void HudGaugeTargetBox::renderTargetDebris(object *target_objp)
 	if (debrisp->parent_alt_name >= 0)
 		mission_parse_lookup_alt_index(debrisp->parent_alt_name, printable_ship_class);
 	else
-		strcpy_s(printable_ship_class, Ship_info[debrisp->ship_info_index].name);
+		strcpy_s(printable_ship_class, (Ship_info[debrisp->ship_info_index].alt_name[0]) ? Ship_info[debrisp->ship_info_index].alt_name : Ship_info[debrisp->ship_info_index].name);
 
 	end_string_at_first_hash_symbol(printable_ship_class);
 	
@@ -814,7 +812,7 @@ void HudGaugeTargetBox::renderTargetWeapon(object *target_objp)
 		return;
 
 	is_homing = FALSE;
-	if ( target_wip->wi_flags & WIF_HOMING && wp->homing_object != &obj_used_list )
+	if ( target_wip->is_homing() && wp->homing_object != &obj_used_list )
 		is_homing = TRUE;
 
 	is_player_missile = FALSE;
@@ -967,7 +965,7 @@ void HudGaugeTargetBox::renderTargetWeapon(object *target_objp)
 
 			// set glowmap flag here since model_render (etc) require an objnum to handle glowmaps
 			// if we did pass the objnum, we'd also have thrusters drawn in the targetbox
-			if (homing_shipp->flags2 & SF2_GLOWMAPS_DISABLED) {
+			if (homing_shipp->flags[Ship::Ship_Flags::Glowmaps_disabled]) {
 				flags |= MR_NO_GLOWMAPS;
 			}
 		}
@@ -1248,7 +1246,7 @@ void HudGaugeTargetBox::renderTargetJumpNode(object *target_objp)
 		hud_num_make_mono(outstr, font_num);
 		gr_get_string_size(&w,&h,outstr);
 	
-		renderPrintf(position[0] + Dist_offsets[0]+hx, position[1] + Dist_offsets[1]+hy, EG_TBOX_DIST, outstr);
+		renderPrintf(position[0] + Dist_offsets[0]+hx, position[1] + Dist_offsets[1]+hy, EG_TBOX_DIST, "%s", outstr);
 	}
 }
 
@@ -1435,16 +1433,19 @@ void HudGaugeExtraTargetData::render(float frametime)
 		// Print out current orders if the targeted ship is friendly
 		// AL 12-26-97: only show orders and time to target for friendly ships
 		// Backslash: actually let's consult the IFF table.  Maybe we want to show orders for certain teams, or hide orders for friendlies
-		if ( ((Player_ship->team == target_shipp->team) || ((Iff_info[target_shipp->team].flags & IFFF_ORDERS_SHOWN) && !(Iff_info[target_shipp->team].flags & IFFF_ORDERS_HIDDEN)) ) && !(ship_get_SIF(target_shipp) & SIF_NOT_FLYABLE) ) {
-			extra_data_shown=1;
-			if ( ship_return_orders(outstr, target_shipp) ) {
+		if (((Player_ship->team == target_shipp->team) ||
+			((Iff_info[target_shipp->team].flags & IFFF_ORDERS_SHOWN) &&
+				!(Iff_info[target_shipp->team].flags & IFFF_ORDERS_HIDDEN)))
+			&& Ship_info[target_shipp->ship_info_index].is_flyable()) {
+			extra_data_shown = 1;
+			if (ship_return_orders(outstr, target_shipp)) {
 				font::force_fit_string(outstr, 255, order_max_w);
 				has_orders = 1;
 			} else {
-				strcpy_s(outstr, XSTR( "no orders", 337));
+				strcpy_s(outstr, XSTR("no orders", 337));
 			}
-			
-			renderString(position[0] + order_offsets[0], position[1] + order_offsets[1], EG_TBOX_EXTRA1, outstr);			
+
+			renderString(position[0] + order_offsets[0], position[1] + order_offsets[1], EG_TBOX_EXTRA1, outstr);
 		}
 
 		if ( has_orders ) {
@@ -1541,8 +1542,7 @@ void HudGaugeExtraTargetData::endFlashDock()
 }
 
 //from aicode.cpp. Less include...problems...this way.
-extern int turret_weapon_aggregate_flags(ship_weapon *swp);
-extern int turret_weapon_aggregate_flags2(ship_weapon *swp);
+extern flagset<Weapon::Info_Flags> turret_weapon_aggregate_flags(ship_weapon *swp);
 extern bool turret_weapon_has_subtype(ship_weapon *swp, int subtype);
 void get_turret_subsys_name(ship_weapon *swp, char *outstr)
 {
@@ -1550,25 +1550,24 @@ void get_turret_subsys_name(ship_weapon *swp, char *outstr)
 
 	//WMC - find the first weapon, if there is one
 	if (swp->num_primary_banks || swp->num_secondary_banks) {
-		int flags = turret_weapon_aggregate_flags(swp);
-		int flags2 = turret_weapon_aggregate_flags2(swp);
+		auto flags = turret_weapon_aggregate_flags(swp);
 
 		// check if beam or flak using weapon flags
-		if (flags & WIF_BEAM) {
+		if (flags[Weapon::Info_Flags::Beam]) {
 			sprintf(outstr, "%s", XSTR("Beam turret", 1567));
-		} else if (flags & WIF_FLAK) {
+		} else if (flags[Weapon::Info_Flags::Flak]) {
 			sprintf(outstr, "%s", XSTR("Flak turret", 1566));
 		} else {
 			if (turret_weapon_has_subtype(swp, WP_MISSILE)) {
 				sprintf(outstr, "%s", XSTR("Missile lnchr", 1569));
 			} else if (turret_weapon_has_subtype(swp, WP_LASER)) {
 				// ballistic too! - Goober5000
-				if (flags2 & WIF2_BALLISTIC)
+				if (flags[Weapon::Info_Flags::Ballistic])
 				{
 					sprintf(outstr, "%s", XSTR("Turret", 1487));
 				}
 				// the TVWP has some primaries flagged as bombs
-				else if (flags & WIF_BOMB)
+				else if (flags[Weapon::Info_Flags::Bomb])
 				{
 					sprintf(outstr, "%s", XSTR("Missile lnchr", 1569));
 				}
@@ -1578,7 +1577,7 @@ void get_turret_subsys_name(ship_weapon *swp, char *outstr)
 				}
 			} else {
 				// Mantis #2226: find out if there are any weapons here at all
-				if (flags == 0 && flags2 == 0) {
+				if (flags.none_set()) {
 					sprintf(outstr, "%s", NOX("Unused"));
 				} else {
 					// Illegal subtype
@@ -1727,13 +1726,13 @@ void HudGaugeTargetBox::renderTargetShipInfo(object *target_objp)
 		if (n_linebreaks) {
 			p_line = strtok(outstr,linebreak);
 			while (p_line != NULL) {
-				renderPrintf(subsys_name_pos_x, subsys_name_pos_y-h-((h+1)*n_linebreaks), p_line);
+				renderPrintf(subsys_name_pos_x, subsys_name_pos_y-h-((h+1)*n_linebreaks), "%s", p_line);
 				p_line = strtok(NULL,linebreak);
 				n_linebreaks--;
 			}
 		} else {
 			hud_targetbox_truncate_subsys_name(outstr);
-			renderPrintf(subsys_name_pos_x, subsys_name_pos_y-h, outstr);
+			renderPrintf(subsys_name_pos_x, subsys_name_pos_y-h, "%s", outstr);
 		}
 
 		int subsys_integrity_pos_x;
@@ -1762,8 +1761,8 @@ void HudGaugeTargetBox::renderTargetShipInfo(object *target_objp)
 	}
 
 	// print out 'disabled' on the monitor if the target is disabled
-	if ( (target_shipp->flags & SF_DISABLED) || (ship_subsys_disrupted(target_shipp, SUBSYSTEM_ENGINE)) ) {
-		if ( target_shipp->flags & SF_DISABLED ) {
+	if ( (target_shipp->flags[Ship::Ship_Flags::Disabled]) || (ship_subsys_disrupted(target_shipp, SUBSYSTEM_ENGINE)) ) {
+		if ( target_shipp->flags[Ship::Ship_Flags::Disabled] ) {
 			strcpy_s(outstr, XSTR( "DISABLED", 342));
 		} else {
 			strcpy_s(outstr, XSTR( "DISRUPTED", 343));
@@ -2027,7 +2026,7 @@ void HudGaugeTargetBox::showTargetData(float frametime)
 				break;
 			}
 
-			gr_printf_no_resize(sx, sy, outstr);
+			gr_printf_no_resize(sx, sy, "%s", outstr);
 			sy += dy;
 
 			gr_printf_no_resize(sx, sy, "Max speed = %d, (%d%%)", (int) shipp->current_max_speed, (int) (100.0f * vm_vec_mag(&target_objp->phys_info.vel)/shipp->current_max_speed));
@@ -2060,7 +2059,7 @@ void HudGaugeTargetBox::showTargetData(float frametime)
 
 				if ( aip->targeted_subsys != NULL ) {
 					sprintf(outstr, "Subsys: %s", aip->targeted_subsys->system_info->subobj_name);
-					gr_printf_no_resize(sx, sy, outstr);
+					gr_printf_no_resize(sx, sy, "%s", outstr);
 				}
 				sy += dy;
 			}
@@ -2069,11 +2068,11 @@ void HudGaugeTargetBox::showTargetData(float frametime)
 			sy = gr_screen.center_offset_y + 70;
 
 			sprintf(outstr,"MAX G/E: %.0f/%.0f",shipp->weapon_energy,shipp->current_max_speed);
-			gr_printf_no_resize(sx, sy, outstr);
+			gr_printf_no_resize(sx, sy, "%s", outstr);
 			sy += dy;
 			 
 			sprintf(outstr,"G/S/E: %.2f/%.2f/%.2f",Energy_levels[shipp->weapon_recharge_index],Energy_levels[shipp->shield_recharge_index],Energy_levels[shipp->engine_recharge_index]);
-			gr_printf_no_resize(sx, sy, outstr);
+			gr_printf_no_resize(sx, sy, "%s", outstr);
 			sy += dy;
 
 			//	Show information about attacker.
@@ -2097,7 +2096,7 @@ void HudGaugeTargetBox::showTargetData(float frametime)
 
 							dot = vm_vec_dot(&v2t, &Enemy_attacker->orient.vec.fvec);
 
-							gr_printf_no_resize(sx, sy, "#%i: %s", Enemy_attacker-Objects, Ships[Enemy_attacker->instance].ship_name);
+							gr_printf_no_resize(sx, sy, "#%i: %s", OBJ_INDEX(Enemy_attacker), Ships[Enemy_attacker->instance].ship_name);
 							sy += dy;
 							gr_printf_no_resize(sx, sy, "Targ dist: %5.1f", dist);
 							sy += dy;
@@ -2154,21 +2153,21 @@ void HudGaugeTargetBox::showTargetData(float frametime)
 		dy = gr_get_font_height();
 
 		sprintf(outstr,"Num primaries: %d", swp->num_primary_banks);
-		gr_printf_no_resize(sx,sy,outstr);
+		gr_printf_no_resize(sx,sy,"%s", outstr);
 		sy += dy;
 		for ( i = 0; i < swp->num_primary_banks; i++ ) {
 			sprintf(outstr,"%d. %s", i+1, Weapon_info[swp->primary_bank_weapons[i]].name);
-			gr_printf_no_resize(sx,sy,outstr);
+			gr_printf_no_resize(sx,sy,"%s", outstr);
 			sy += dy;
 		}
 
 		sy += dy;
 		sprintf(outstr,"Num secondaries: %d", swp->num_secondary_banks);
-		gr_printf_no_resize(sx,sy,outstr);
+		gr_printf_no_resize(sx,sy,"%s", outstr);
 		sy += dy;
 		for ( i = 0; i < swp->num_secondary_banks; i++ ) {
 			sprintf(outstr,"%d. %s", i+1, Weapon_info[swp->secondary_bank_weapons[i]].name);
-			gr_printf_no_resize(sx,sy,outstr);
+			gr_printf_no_resize(sx,sy,"%s", outstr);
 			sy += dy;
 		}
 	}
@@ -2248,7 +2247,7 @@ void hud_update_ship_status(object *targetp)
     
     if ( (targetp->instance >= 0) && (targetp->instance < MAX_SHIPS) ) {
     	// print out status of ship for the targetbox
-		if ( (Ships[targetp->instance].flags & SF_DISABLED) || (ship_subsys_disrupted(&Ships[targetp->instance], SUBSYSTEM_ENGINE)) ) {
+		if ( (Ships[targetp->instance].flags[Ship::Ship_Flags::Disabled]) || (ship_subsys_disrupted(&Ships[targetp->instance], SUBSYSTEM_ENGINE)) ) {
 			Current_ts = TS_DIS;
 		} else {
 			if ( Pl_target_integrity > 0.9 ) {

@@ -18,6 +18,7 @@
 #include "missionui/missionscreencommon.h"
 #include "missionui/redalert.h"
 #include "mod_table/mod_table.h"
+#include "parse/parselo.h"
 #include "sound/audiostr.h"
 
 
@@ -26,13 +27,13 @@
 // MISSION FICTION VIEWER DEFINES/VARS
 //
 #define NUM_FVW_SETTINGS	2
-char *Fiction_viewer_ui_names[NUM_FVW_SETTINGS] =
+const char *Fiction_viewer_ui_names[NUM_FVW_SETTINGS] =
 {
 	"FS2",	// FreeSpace 2
 	"WCS"	// Wing Commander Saga
 };
 
-char *Fiction_viewer_screen_filename[NUM_FVW_SETTINGS][GR_NUM_RESOLUTIONS] =
+const char *Fiction_viewer_screen_filename[NUM_FVW_SETTINGS][GR_NUM_RESOLUTIONS] =
 {
 	{
 		"FictionViewer",		// GR_640
@@ -44,7 +45,7 @@ char *Fiction_viewer_screen_filename[NUM_FVW_SETTINGS][GR_NUM_RESOLUTIONS] =
 	}
 };
 
-char *Fiction_viewer_screen_mask[NUM_FVW_SETTINGS][GR_NUM_RESOLUTIONS] =
+const char *Fiction_viewer_screen_mask[NUM_FVW_SETTINGS][GR_NUM_RESOLUTIONS] =
 {
 	{
 		"FictionViewer-m",		// GR_640
@@ -117,7 +118,7 @@ ui_button_info Fiction_viewer_buttons[NUM_FVW_SETTINGS][GR_NUM_RESOLUTIONS][NUM_
 	}
 };
 
-char *Fiction_viewer_slider_filename[NUM_FVW_SETTINGS][GR_NUM_RESOLUTIONS] =
+const char *Fiction_viewer_slider_filename[NUM_FVW_SETTINGS][GR_NUM_RESOLUTIONS] =
 {
 	// standard FS2-style interface
 	{
@@ -456,7 +457,7 @@ void fiction_viewer_do_frame(float frametime)
 		int more_txt_x = Fiction_viewer_text_coordinates[Fiction_viewer_ui][gr_screen.res][0] + (Fiction_viewer_text_coordinates[Fiction_viewer_ui][gr_screen.res][2]/2) - 10;
 		int more_txt_y = Fiction_viewer_text_coordinates[Fiction_viewer_ui][gr_screen.res][1] + Fiction_viewer_text_coordinates[Fiction_viewer_ui][gr_screen.res][3];				// located below text, centered
 
-		gr_get_string_size(&w, &h, XSTR("more", 1469), strlen(XSTR("more", 1469)));
+		gr_get_string_size(&w, &h, XSTR("more", 1469), (int)strlen(XSTR("more", 1469)));
 		gr_set_color_fast(&Color_black);
 		gr_rect(more_txt_x-2, more_txt_y, w+3, h, GR_RESIZE_MENU);
 		gr_set_color_fast(&Color_more_indicator);
@@ -564,15 +565,23 @@ void fiction_viewer_load(int stage)
 	}
 	else
 	{
-		// allocate space
+		// allocate space for raw text
 		int file_length = cfilelength(fp);
-		Fiction_viewer_text = (char *) vm_malloc(file_length + 1);
-		Fiction_viewer_text[file_length] = '\0';
+		char *Fiction_viewer_text_raw = (char *) vm_malloc(file_length + 1);
+		Fiction_viewer_text_raw[file_length] = '\0';
 
 		// copy all the text
-		cfread(Fiction_viewer_text, file_length, 1, fp);
+		cfread(Fiction_viewer_text_raw, file_length, 1, fp);
 
-		// we're done, close it out
+		// we're done with the file, close it out
 		cfclose(fp);
+
+		// allocate space for converted text, then perform the character conversion
+		auto length = get_converted_string_length(Fiction_viewer_text_raw) + 1;
+		Fiction_viewer_text = (char *) vm_malloc(length);
+		maybe_convert_foreign_characters(Fiction_viewer_text_raw, Fiction_viewer_text);
+
+		// deallocate space for raw text
+		vm_free(Fiction_viewer_text_raw);
 	}
 }

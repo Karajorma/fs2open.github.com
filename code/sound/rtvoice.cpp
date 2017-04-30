@@ -15,6 +15,11 @@
 #include "sound/rtvoice.h"
 #include "sound/sound.h"
 
+#ifdef WIN32
+#define WIN32_LEAN_AN_MEAN
+#include <windows.h>
+#endif
+
 
 typedef struct rtv_format
 {
@@ -90,7 +95,7 @@ void CALLBACK TimeProc(unsigned int id, unsigned int msg, DWORD_PTR userdata, DW
 	Rtv_callback();
 }
 #else
-Uint32 CALLBACK TimeProc(Uint32 interval, void *param)
+Uint32 TimeProc(Uint32 interval, void *param)
 {
 	if ( !Rtv_callback ) {
 		SDL_RemoveTimer(Rtv_record_timer_id);

@@ -53,7 +53,9 @@ CJumpNode::CJumpNode(vec3d *position) : m_radius(0.0f), m_modelnum(-1), m_objnum
     m_pos.xyz.z = position->xyz.z;
     
 	// Create the object
-    m_objnum = obj_create(OBJ_JUMP_NODE, -1, -1, NULL, &m_pos, m_radius, OF_RENDERS);
+    flagset<Object::Object_Flags> default_flags;
+    default_flags.set(Object::Object_Flags::Renders);
+    m_objnum = obj_create(OBJ_JUMP_NODE, -1, -1, NULL, &m_pos, m_radius, default_flags);
 }
 
 CJumpNode::CJumpNode(CJumpNode&& other)
@@ -290,7 +292,7 @@ bool CJumpNode::IsSpecialModel()
 */
 void CJumpNode::Render(vec3d *pos, vec3d *view_pos)
 {
-	draw_list scene;
+	model_draw_list scene;
 
 	Render(&scene, pos, view_pos);
 
@@ -299,7 +301,6 @@ void CJumpNode::Render(vec3d *pos, vec3d *view_pos)
 
 	gr_set_fill_mode(GR_FILL_MODE_SOLID);
 	gr_clear_states();
-	gr_set_buffer(-1);
 }
 
 /**
@@ -309,7 +310,7 @@ void CJumpNode::Render(vec3d *pos, vec3d *view_pos)
 * @param pos		World position
 * @param view_pos	Viewer's world position, can be NULL
 */
-void CJumpNode::Render(draw_list* scene, vec3d *pos, vec3d *view_pos)
+void CJumpNode::Render(model_draw_list* scene, vec3d *pos, vec3d *view_pos)
 {
 	Assert(pos != NULL);
 	// Assert(view_pos != NULL); - view_pos can be NULL

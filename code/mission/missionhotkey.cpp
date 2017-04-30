@@ -61,12 +61,12 @@ HK_save_info Hotkey_saved_info[MAX_HOTKEY_TARGET_ITEMS];
 int Num_hotkeys_saved;
 
 
-static char *Hotkey_background_fname[GR_NUM_RESOLUTIONS] = {
+static const char *Hotkey_background_fname[GR_NUM_RESOLUTIONS] = {
 	"Hotkeys",		// GR_640
 	"2_Hotkeys"		// GR_1024
 };
 
-static char *Hotkey_mask_fname[GR_NUM_RESOLUTIONS] = {
+static const char *Hotkey_mask_fname[GR_NUM_RESOLUTIONS] = {
 	"Hotkeys-M",		// GR_640
 	"2_Hotkeys-M"	// GR_1024
 };
@@ -195,12 +195,12 @@ static int Hotkey_ship_x[GR_NUM_RESOLUTIONS] = {
 };
 
 struct hotkey_buttons {
-	char *filename;
+	const char *filename;
 	int x, y;
 	int hotspot;
 	UI_BUTTON button;  // because we have a class inside this struct, we need the constructor below..
 
-	hotkey_buttons(char *name, int x1, int y1, int h) : filename(name), x(x1), y(y1), hotspot(h) {}
+	hotkey_buttons(const char *name, int x1, int y1, int h) : filename(name), x(x1), y(y1), hotspot(h) {}
 };
 
 // button definitions
@@ -603,11 +603,11 @@ int hotkey_build_team_listing(int enemy_team_mask, int y, bool list_enemies)
 		shipnum = Objects[so->objnum].instance;
 
 		// filter out cargo containers, navbouys, etc, and non-ships
-		if ( Ship_info[Ships[shipnum].ship_info_index].class_type < 0 || !(Ship_types[Ship_info[Ships[shipnum].ship_info_index].class_type].hud_bools & STI_HUD_HOTKEY_ON_LIST ))
+		if ( Ship_info[Ships[shipnum].ship_info_index].class_type < 0 || !(Ship_types[Ship_info[Ships[shipnum].ship_info_index].class_type].flags[Ship::Type_Info_Flags::Hotkey_on_list] ))
 			continue;
 
 		// don't process ships invisible to sensors, dying or departing
-		if ( Ships[shipnum].flags & (SF_HIDDEN_FROM_SENSORS|SF_DYING|SF_DEPARTING) )
+		if ( Ships[shipnum].flags[Ship::Ship_Flags::Hidden_from_sensors] || Ships[shipnum].is_dying_or_departing() )
 			continue;
 
 		// if a ship's hotkey is the last hotkey on the list, then maybe make the hotkey -1 if
@@ -641,7 +641,7 @@ int hotkey_build_team_listing(int enemy_team_mask, int y, bool list_enemies)
 
 			// don't add any wing data whose ships are hidden from sensors
 			for ( j = 0; j < Wings[i].current_count; j++ ) {
-				if ( Ships[Wings[i].ship_index[j]].flags & SF_HIDDEN_FROM_SENSORS )
+				if ( Ships[Wings[i].ship_index[j]].flags[Ship::Ship_Flags::Hidden_from_sensors] )
 					break;
 			}
 			// if we didn't reach the end of the list, don't display the wing
@@ -649,7 +649,7 @@ int hotkey_build_team_listing(int enemy_team_mask, int y, bool list_enemies)
 				continue;
 
 			z = hotkey_line_add_sorted(Wings[i].name, HOTKEY_LINE_WING, i, start);
-			if (Wings[i].flags & WF_EXPANDED) {
+			if (Wings[i].flags[Ship::Wing_Flags::Expanded]) {
 				for (j=0; j<Wings[i].current_count; j++) {
 					s = Wings[i].ship_index[j];
 					z = hotkey_line_insert(z + 1, Ships[s].ship_name, HOTKEY_LINE_SUBSHIP, s);
@@ -765,7 +765,7 @@ void expand_wing()
 
 	if (Hotkey_lines[Selected_line].type == HOTKEY_LINE_WING) {
 		i = Hotkey_lines[Selected_line].index;
-		Wings[i].flags ^= WF_EXPANDED;
+        Wings[i].flags.toggle(Ship::Wing_Flags::Expanded);
 		hotkey_build_listing();
 		for (z=0; z<Num_lines; z++)
 			if ((Hotkey_lines[z].type == HOTKEY_LINE_WING) && (Hotkey_lines[z].index == i)) {
@@ -1158,7 +1158,7 @@ void mission_hotkey_do_frame(float frametime)
 	gr_set_color_fast(&Color_text_normal);
 	strcpy_s(buf, Scan_code_text[Key_sets[Cur_hotkey]]);
 	gr_get_string_size(&w, &h, buf);
-	gr_printf_menu(Hotkey_function_name_coords[gr_screen.res][0] + (Hotkey_function_name_coords[gr_screen.res][2] - w) / 2, Hotkey_function_name_coords[gr_screen.res][1], buf);
+	gr_printf_menu(Hotkey_function_name_coords[gr_screen.res][0] + (Hotkey_function_name_coords[gr_screen.res][2] - w) / 2, Hotkey_function_name_coords[gr_screen.res][1], "%s", buf);
 
 	font::set_font(font::FONT1);
 	line = Scroll_offset;
@@ -1229,7 +1229,7 @@ void mission_hotkey_do_frame(float frametime)
 		if (hotkeys) {
 			for (i=0; i<MAX_KEYED_TARGETS; i++) {
 				if (hotkeys & (1 << i)) {
-					gr_printf_menu(Hotkey_list_coords[gr_screen.res][0] + Hotkey_function_field_width[gr_screen.res]*i, y, Scan_code_text[Key_sets[i]]);
+					gr_printf_menu(Hotkey_list_coords[gr_screen.res][0] + Hotkey_function_field_width[gr_screen.res]*i, y, "%s", Scan_code_text[Key_sets[i]]);
 				}
 			}
 /*
@@ -1254,10 +1254,10 @@ void mission_hotkey_do_frame(float frametime)
 		if (Hotkey_lines[line].type == HOTKEY_LINE_SUBSHIP) {
 			// indent
 			font::force_fit_string(buf, 255, Hotkey_list_coords[gr_screen.res][0] + Hotkey_list_coords[gr_screen.res][2] - (Hotkey_ship_x[gr_screen.res]+20));
-			gr_printf_menu(Hotkey_ship_x[gr_screen.res]+20, y, buf);
+			gr_printf_menu(Hotkey_ship_x[gr_screen.res]+20, y, "%s", buf);
 		} else {
 			font::force_fit_string(buf, 255, Hotkey_list_coords[gr_screen.res][0] + Hotkey_list_coords[gr_screen.res][2] - Hotkey_ship_x[gr_screen.res]);
-			gr_printf_menu(Hotkey_ship_x[gr_screen.res], y, buf);
+			gr_printf_menu(Hotkey_ship_x[gr_screen.res], y, "%s", buf);
 		}
 
 		line++;

@@ -24,6 +24,7 @@
 #include "ship/ship.h"
 #include "starfield/starfield.h"
 #include "tgautils/tgautils.h"
+#include "tracing/tracing.h"
 
 
 // --------------------------------------------------------------------------------------------------------
@@ -345,7 +346,7 @@ void neb2_post_level_init()
 	}
 
 	// if the mission is not a fullneb mission, skip
-	if ( !((The_mission.flags & MISSION_FLAG_FULLNEB) || Nebula_sexp_used) ) {
+	if ( !((The_mission.flags[Mission::Mission_Flags::Fullneb]) || Nebula_sexp_used) ) {
 		Neb2_render_mode = NEB2_RENDER_NONE;
 		Neb2_awacs = -1.0f;
 		return;
@@ -414,7 +415,7 @@ void neb2_post_level_init()
 	neb2_eye_changed();
 
 	// if we are going to use fullneb, but aren't fullneb yet, then be sure to reset our mode
-	if ( !(The_mission.flags & MISSION_FLAG_FULLNEB) ) {
+	if ( !(The_mission.flags[Mission::Mission_Flags::Fullneb]) ) {
 		Neb2_render_mode = NEB2_RENDER_NONE;
 		Neb2_awacs = -1.0f;
 	}
@@ -431,7 +432,7 @@ void neb2_level_close()
 	}
 
 	// if the mission is not a fullneb mission, skip
-	if ( !((The_mission.flags & MISSION_FLAG_FULLNEB) || Nebula_sexp_used) ) {
+	if ( !((The_mission.flags[Mission::Mission_Flags::Fullneb]) || Nebula_sexp_used) ) {
 		return;
 	}
 
@@ -444,7 +445,7 @@ void neb2_level_close()
 	}
 
 	// unflag the mission as being fullneb so stuff doesn't fog in the techdata room :D
-	The_mission.flags &= ~MISSION_FLAG_FULLNEB;
+    The_mission.flags.remove(Mission::Mission_Flags::Fullneb);
 
 	if (Neb2_htl_fog_data) {
 		delete[] Neb2_htl_fog_data;
@@ -455,13 +456,16 @@ void neb2_level_close()
 // call before beginning all rendering
 void neb2_render_setup(camid cid)
 {
+	GR_DEBUG_SCOPE("Nebula Setup");
+	TRACE_SCOPE(tracing::SetupNebula);
+
 	// standalone servers can bail here
 	if (Game_mode & GM_STANDALONE_SERVER) {
 		return;
 	}
 
 	// if the mission is not a fullneb mission, skip
-	if ( !(The_mission.flags & MISSION_FLAG_FULLNEB) ) {
+	if ( !(The_mission.flags[Mission::Mission_Flags::Fullneb]) ) {
 		return;
 	}
 
@@ -496,7 +500,7 @@ void neb2_page_in()
 	int idx;
 
 	// load in all nebula bitmaps
-	if ( (The_mission.flags & MISSION_FLAG_FULLNEB) || Nebula_sexp_used ) {
+	if ( (The_mission.flags[Mission::Mission_Flags::Fullneb]) || Nebula_sexp_used ) {
 		for (idx = 0; idx < Neb2_poof_count; idx++) {
 			if ( (Neb2_poofs[idx] >= 0) && (Neb2_poof_flags & (1<<idx)) ) {
 				bm_page_in_texture(Neb2_poofs[idx]);
@@ -524,12 +528,7 @@ int neb2_skip_render(object *objp, float z_depth)
 	if (!neb_skip_opt) {
 		return 0;
 	}
-
-	// lame rendering
-	if (Neb2_render_mode == NEB2_RENDER_LAME) {
-		return 0;
-	}
-
+	
 	// get near and far fog values based upon object type and rendering mode
 	neb2_get_adjusted_fog_values(&fog_near, &fog_far, objp);
 
@@ -562,17 +561,17 @@ int neb2_skip_render(object *objp, float z_depth)
 			}
 
 			// small ships over the fog limit by a small factor
-			if ( (sip->flags & SIF_SMALL_SHIP) && (z_depth >= (fog_far * 1.5f)) ) {
+			if ( (sip->is_small_ship()) && (z_depth >= (fog_far * 1.5f)) ) {
 				return 1;
 			}
 
 			// big ships
-			if ( (sip->flags & SIF_BIG_SHIP) && (z_depth >= (fog_far * 2.0f)) ) {
+			if ( (sip->is_big_ship()) && (z_depth >= (fog_far * 2.0f)) ) {
 				return 1;
 			}
 
 			// huge ships
-			if ( (sip->flags & SIF_HUGE_SHIP) && (z_depth >= (fog_far * 3.0f)) ) {
+			if ( (sip->is_huge_ship()) && (z_depth >= (fog_far * 3.0f)) ) {
 				return 1;
 			}
 			break;
@@ -620,9 +619,9 @@ float neb2_get_lod_scale(int objnum)
 	sip = &Ship_info[shipp->ship_info_index];
 
 	// small ship?
-	if (sip->flags & SIF_SMALL_SHIP) {
+	if (sip->is_small_ship()) {
 		return 1.8f;
-	} else if (sip->flags & SIF_BIG_SHIP) {
+	} else if (sip->is_big_ship()) {
 		return 1.4f;
 	}
 
@@ -916,6 +915,8 @@ int frame_count = 0;
 float frame_avg;
 void neb2_render_player()
 {
+	GR_DEBUG_SCOPE("Nebula render player");
+
 	vertex p, ptemp;
 	int idx1, idx2, idx3;
 	float alpha;
@@ -929,7 +930,7 @@ void neb2_render_player()
 	}
 
 	// if the mission is not a fullneb mission, skip
-	if (!(The_mission.flags & MISSION_FLAG_FULLNEB)) {
+	if (!(The_mission.flags[Mission::Mission_Flags::Fullneb])) {
 		return;
 	}
 
@@ -937,13 +938,9 @@ void neb2_render_player()
 		neb2_regen();
 		Neb2_regen = 0;
 	}
-
-	// don't render in lame mode
-	if ((Neb2_render_mode == NEB2_RENDER_LAME) || (Neb2_render_mode == NEB2_RENDER_NONE)) {
-		return;
-	}
     
     memset(&p, 0, sizeof(p));
+	memset(&ptemp, 0, sizeof(ptemp));
 
 	// get eye position and orientation
 	neb2_get_eye_pos(&eye_pos);
@@ -1036,10 +1033,10 @@ void neb2_render_player()
 					continue;
 				}
 
-				// rotate and project the vertex into viewspace
-				g3_rotate_vertex(&p, &Neb2_cubes[idx1][idx2][idx3].pt);
+				g3_transfer_vertex(&p, &Neb2_cubes[idx1][idx2][idx3].pt);
 
-				ptemp = p;
+				// rotate and project the vertex into viewspace
+				g3_rotate_vertex(&ptemp, &Neb2_cubes[idx1][idx2][idx3].pt);
 				g3_project_vertex(&ptemp);
 
 				// get the proper alpha value
@@ -1073,12 +1070,16 @@ void neb2_render_player()
 				}
 
 				// set the bitmap and render
-				gr_set_bitmap(Neb2_cubes[idx1][idx2][idx3].bmap, GR_ALPHABLEND_FILTER, GR_BITBLT_MODE_NORMAL, (alpha + Neb2_cubes[idx1][idx2][idx3].flash));
+				//gr_set_bitmap(Neb2_cubes[idx1][idx2][idx3].bmap, GR_ALPHABLEND_FILTER, GR_BITBLT_MODE_NORMAL, (alpha + Neb2_cubes[idx1][idx2][idx3].flash));
 
 				gr_set_lighting(false, false);
-				gr_fog_set(GR_FOGMODE_NONE, 0, 0, 0);
-				g3_draw_rotated_bitmap(&p, fl_radians(Neb2_cubes[idx1][idx2][idx3].rot), Nd->prad, TMAP_FLAG_TEXTURED);
-			} 
+				//gr_fog_set(GR_FOGMODE_NONE, 0, 0, 0);
+				//g3_draw_rotated_bitmap(&p, fl_radians(Neb2_cubes[idx1][idx2][idx3].rot), Nd->prad, TMAP_FLAG_TEXTURED);
+				material mat_params;
+				material_set_unlit(&mat_params, Neb2_cubes[idx1][idx2][idx3].bmap, alpha + Neb2_cubes[idx1][idx2][idx3].flash, true, true);
+				mat_params.set_color_scale(3.f);
+				g3_render_rect_screen_aligned_rotated(&mat_params, &p, fl_radians(Neb2_cubes[idx1][idx2][idx3].rot), Nd->prad);
+			}
 		}
 	}
 
@@ -1221,7 +1222,7 @@ int tbmap = -1;
 void neb2_pre_render(camid cid)
 {
 	// if the mission is not a fullneb mission, skip
-	if (!(The_mission.flags & MISSION_FLAG_FULLNEB)) {
+	if (!(The_mission.flags[Mission::Mission_Flags::Fullneb])) {
 		return;
 	}
 
@@ -1290,14 +1291,6 @@ void neb2_get_pixel(int x, int y, int *r, int *g, int *b)
 	ubyte avg_count;
 	int xs, ys;
 
-	// if we're in lame rendering mode, return a constant value
-	if (Neb2_render_mode == NEB2_RENDER_LAME) {
-		*r = Neb2_background_color[0];
-		*g = Neb2_background_color[1];
-		*b = Neb2_background_color[2];
-
-		return;
-	}
 
 	// get the proper pixel index to be looking up
 	rv = gv = bv = 0;
@@ -1567,18 +1560,10 @@ DCF(neb2_mode, "Switches nebula render modes")
 			Neb2_render_mode = NEB2_RENDER_NONE;
 		break;
 
-		case NEB2_RENDER_POLY:
-			Neb2_render_mode = NEB2_RENDER_POLY;
-		break;
-
 		case NEB2_RENDER_POF:
 			Neb2_render_mode = NEB2_RENDER_POF;
 			stars_set_background_model(BACKGROUND_MODEL_FILENAME, "Eraseme3");
 			stars_set_background_orientation();
-		break;
-
-		case NEB2_RENDER_LAME:
-			Neb2_render_mode = NEB2_RENDER_LAME;
 		break;
 
 		case NEB2_RENDER_HTL:

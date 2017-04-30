@@ -19,8 +19,8 @@
 #include "io/timer.h"
 #include "pcxutils/pcxutils.h"
 #include "render/3d.h"
-
-
+#include "graphics/material.h"
+#include "tracing/Monitor.h"
 
 static color Color_xparent;
 
@@ -505,7 +505,10 @@ int anim_show_next_frame(anim_instance *instance, float frametime)
 		else {
 			g3_rotate_vertex(&image_vertex,instance->world_pos);
 			Assert(instance->radius != 0.0f);
-			g3_draw_bitmap(&image_vertex, 0, instance->radius*1.5f, TMAP_FLAG_TEXTURED | TMAP_HTL_2D);
+			//g3_draw_bitmap(&image_vertex, 0, instance->radius*1.5f, TMAP_FLAG_TEXTURED | TMAP_HTL_2D);
+			material mat_params;
+			material_set_unlit(&mat_params, bitmap_id, 1.0f, false, false);
+			g3_render_rect_screen_aligned_2d(&mat_params, &image_vertex, 0, instance->radius*1.5f);
 		}
 									  
 		instance->last_bitmap = bitmap_id;
@@ -684,7 +687,7 @@ void anim_read_header(anim *ptr, CFILE *fp)
  * @details Memory-mapped files will page in the animation from disk as it is needed, but performance is not as good.
  * @return Pointer to anim that is loaded if sucess, NULL if failure.
  */
-anim *anim_load(char *real_filename, int cf_dir_type, int file_mapped)
+anim *anim_load(const char *real_filename, int cf_dir_type, int file_mapped)
 {
 	anim			*ptr;
 	CFILE			*fp;

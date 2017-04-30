@@ -12,6 +12,7 @@
 #include "globalincs/globals.h"
 #include "globalincs/pstypes.h"
 #include "graphics/2d.h"
+#include "mission/mission_flags.h"
 
 class object;
 
@@ -43,8 +44,7 @@ typedef struct iff_info {
 
 	// flags
 	int flags;
-	int default_parse_flags;
-	int default_parse_flags2;
+	flagset<Mission::Parse_Object_Flags> default_parse_flags;
 
 	// used internally, not parsed
 	int ai_rearm_timestamp;
@@ -67,7 +67,7 @@ extern int iff_init_color(int r, int g, int b);
 extern void iff_init();
 
 // search for iff
-extern int iff_lookup(char *iff_name);
+extern int iff_lookup(const char *iff_name);
 
 // attack stuff
 // NB: As far as the differences between I attack him and he attacks me, think of a hidden traitor on your own team.

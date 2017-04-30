@@ -8,11 +8,11 @@ if [ "$TRAVIS_OS_NAME" = "linux" ]; then
     for config in $BUILD_CONFIGS
     do
         cd "$config"
-        ninja install appimage
+        ninja appimage
         cd ..
     done
 
-    ls -al /tmp/release
+    cp `find /tmp/release -name '*.AppImage' -print` /tmp/release
     (cd /tmp/release && tar -cvzf /tmp/builds/$PACKAGE_NAME-builds-Linux.tar.gz *.AppImage)
 elif [ "$TRAVIS_OS_NAME" = "osx" ]; then
     cd build
@@ -20,7 +20,7 @@ elif [ "$TRAVIS_OS_NAME" = "osx" ]; then
     for config in $BUILD_CONFIGS
     do
         cmake --build . --config "$config" --target install | tee build.log \
-            | xcpretty -f `xcpretty-travis-formatter`
+            | xcpretty
         XCODE_RET=${PIPESTATUS[0]}
         if [ "$XCODE_RET" -ne "0" ]; then
             tar -cvzf build.log.tar.gz build.log

@@ -7,9 +7,6 @@
  *
 */ 
 
-
-#include "SDL.h"
-
 #include "controlconfig/controlsconfig.h" //For textify scancode
 #include "globalincs/pstypes.h"
 #include "graphics/2d.h"
@@ -17,7 +14,7 @@
 #include "math/fix.h"
 #include "io/timer.h"
 #include "localization/localize.h"
-#include "parse/scripting.h"
+#include "scripting/scripting.h"
 #include "cmdline/cmdline.h"
 
 #define THREADED	// to use the proper set of macros
@@ -91,7 +88,7 @@ namespace
 {
 	bool key_down_event_handler(const SDL_Event& e)
 	{
-		if (!os::events::isWindowEvent(e, os_get_window())) {
+		if (!os::events::isWindowEvent(e, os::getSDLMainWindow())) {
 			return false;
 		}
 
@@ -106,7 +103,7 @@ namespace
 
 	bool key_up_event_handler(const SDL_Event& e)
 	{
-		if (!os::events::isWindowEvent(e, os_get_window())) {
+		if (!os::events::isWindowEvent(e, os::getSDLMainWindow())) {
 			return false;
 		}
 
@@ -637,7 +634,7 @@ void key_mark( uint code, int state, uint latency )
 			Current_key_down |= KEY_CTRLED;
 		}
 
-		Script_system.SetHookVar("Key", 's', textify_scancode(Current_key_down));
+		Script_system.SetHookVar("Key", 's', textify_scancode_universal(Current_key_down));
 		Script_system.RunCondition(CHA_KEYRELEASED);
 		Script_system.RemHookVar("Key");
 	} else {
@@ -665,7 +662,8 @@ void key_mark( uint code, int state, uint latency )
 				Current_key_down |= KEY_CTRLED;
 			}
 
-			Script_system.SetHookVar("Key", 's', textify_scancode(Current_key_down));
+			// We use the universal value here to keep the scripting interface consistent regardless of the current language
+			Script_system.SetHookVar("Key", 's', textify_scancode_universal(Current_key_down));
 			Script_system.RunCondition(CHA_KEYPRESSED);
 			Script_system.RemHookVar("Key");
 		} else if (!keyd_repeat) {

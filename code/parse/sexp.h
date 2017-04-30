@@ -112,13 +112,7 @@ class waypoint_list;
 #define OPF_TEAM_COLOR			85		// The E - Color settings as defined in Colors.tbl
 #define OPF_NEBULA_PATTERN		86		// Axem - Full Nebula Background Patterns, as defined in nebula.tbl
 #define OPF_SKYBOX_FLAGS		87		// niffiwan - valid skybox flags
-#define OPF_GAME_SND			88		// m!m - A game soundflags
-#define OPF_CONTAINER_NAME		89		// Karajorma - The name of a SEXP container
-#define OPF_LIST_CONTAINER_NAME		90		// Karajorma - The name of a SEXP list container
-#define OPF_MAP_CONTAINER_NAME		91		// Karajorma - The name of a SEXP map container
-#define OPF_LIST_MODIFIER		92		// Karajorma - The possible modifiers for a SEXP list container
-#define OPF_MAP_KEY				93		// Karajorma - The keys in a SEXP map container
-
+#define OPF_GAME_SND			88		// m!m - A game sound
 
 // Operand return types
 #define	OPR_NUMBER				1	// returns number
@@ -204,8 +198,7 @@ class waypoint_list;
 #define CHANGE_SUBCATEGORY_JUMP_NODES						(0x0010 | OP_CATEGORY_CHANGE)
 #define CHANGE_SUBCATEGORY_SPECIAL_EFFECTS					(0x0011 | OP_CATEGORY_CHANGE)
 #define CHANGE_SUBCATEGORY_VARIABLES						(0x0012 | OP_CATEGORY_CHANGE)
-#define CHANGE_SUBCATEGORY_CONTAINERS						(0x0013 | OP_CATEGORY_CHANGE)
-#define CHANGE_SUBCATEGORY_OTHER							(0x0014 | OP_CATEGORY_CHANGE)
+#define CHANGE_SUBCATEGORY_OTHER							(0x0013 | OP_CATEGORY_CHANGE)
 
 
 #define STATUS_SUBCATEGORY_MISSION							(0x0000 | OP_CATEGORY_STATUS)
@@ -217,8 +210,7 @@ class waypoint_list;
 #define STATUS_SUBCATEGORY_DAMAGE							(0x0006 | OP_CATEGORY_STATUS)
 #define STATUS_SUBCATEGORY_DISTANCE_AND_COORDINATES			(0x0007 | OP_CATEGORY_STATUS)
 #define STATUS_SUBCATEGORY_VARIABLES						(0x0008 | OP_CATEGORY_STATUS)
-#define STATUS_SUBCATEGORY_CONTAINERS						(0x0009 | OP_CATEGORY_STATUS)
-#define STATUS_SUBCATEGORY_OTHER							(0x000A | OP_CATEGORY_STATUS)
+#define STATUS_SUBCATEGORY_OTHER							(0x0009 | OP_CATEGORY_STATUS)
 
 
 #define	OP_PLUS								(0x0000 | OP_CATEGORY_ARITHMETIC)
@@ -395,7 +387,6 @@ class waypoint_list;
 #define OP_TURRET_GET_PRIMARY_AMMO			(0x004f | OP_CATEGORY_STATUS | OP_NONCAMPAIGN_FLAG)	// DahBlount, part of the turret ammo code
 
 #define OP_TURRET_GET_SECONDARY_AMMO		(0x0050 | OP_CATEGORY_STATUS | OP_NONCAMPAIGN_FLAG)	// DahBlount, part of the turret ammo code
-#define OP_IS_CONTAINER_EMPTY				(0x0051 | OP_CATEGORY_STATUS | OP_NONCAMPAIGN_FLAG)	// Karajorma
 
 // conditional sexpressions
 #define OP_WHEN								(0x0000 | OP_CATEGORY_CONDITIONAL)
@@ -456,7 +447,7 @@ class waypoint_list;
 #define OP_TECH_ADD_SHIP					(0x0020 | OP_CATEGORY_CHANGE | OP_NONCAMPAIGN_FLAG)
 #define OP_TECH_ADD_WEAPON					(0x0021 | OP_CATEGORY_CHANGE | OP_NONCAMPAIGN_FLAG)
 #define OP_END_CAMPAIGN						(0x0022 | OP_CATEGORY_CHANGE | OP_NONCAMPAIGN_FLAG)
-#define OP_JETTISON_CARGO					(0x0023 | OP_CATEGORY_CHANGE | OP_NONCAMPAIGN_FLAG)
+#define OP_JETTISON_CARGO_DELAY				(0x0023 | OP_CATEGORY_CHANGE | OP_NONCAMPAIGN_FLAG)
 #define OP_MODIFY_VARIABLE					(0X0024 | OP_CATEGORY_CHANGE | OP_NONCAMPAIGN_FLAG)
 #define OP_NOP								(0x0025 | OP_CATEGORY_CHANGE | OP_NONCAMPAIGN_FLAG)
 #define OP_BEAM_FIRE						(0x0026 | OP_CATEGORY_CHANGE | OP_NONCAMPAIGN_FLAG)
@@ -741,11 +732,7 @@ class waypoint_list;
 #define OP_BEAM_FLOATING_FIRE				(0x002b | OP_CATEGORY_CHANGE2 | OP_NONCAMPAIGN_FLAG)	// MageKing17
 #define OP_TURRET_SET_PRIMARY_AMMO			(0x002c | OP_CATEGORY_CHANGE2 | OP_NONCAMPAIGN_FLAG)	// DahBlount, part of the turret ammo changes
 #define OP_TURRET_SET_SECONDARY_AMMO		(0x002d | OP_CATEGORY_CHANGE2 | OP_NONCAMPAIGN_FLAG)	// DahBlount, part of the turret ammo changes
-#define OP_CONTAINER_ADD_TO_LIST			(0x002e | OP_CATEGORY_CHANGE2 | OP_NONCAMPAIGN_FLAG)	// Karajorma
-#define OP_CONTAINER_ADD_TO_MAP				(0x002f | OP_CATEGORY_CHANGE2 | OP_NONCAMPAIGN_FLAG)	// Karajorma
-
-#define OP_CLEAR_CONTAINER					(0x0030 | OP_CATEGORY_CHANGE2 | OP_NONCAMPAIGN_FLAG)	// Karajorma
-#define OP_GET_MAP_KEYS						(0x0031 | OP_CATEGORY_CHANGE2 | OP_NONCAMPAIGN_FLAG)	// Karajorma
+#define OP_JETTISON_CARGO_NEW				(0x002e | OP_CATEGORY_CHANGE2 | OP_NONCAMPAIGN_FLAG)	// Goober5000
 
 // defined for AI goals
 #define OP_AI_CHASE							(0x0000 | OP_CATEGORY_AI | OP_NONCAMPAIGN_FLAG)
@@ -767,6 +754,7 @@ class waypoint_list;
 #define OP_AI_PLAY_DEAD						(0x0010 | OP_CATEGORY_AI | OP_NONCAMPAIGN_FLAG)
 #define OP_AI_IGNORE_NEW					(0x0011 | OP_CATEGORY_AI | OP_NONCAMPAIGN_FLAG)	// Goober5000
 #define OP_AI_FORM_ON_WING					(0x0012 | OP_CATEGORY_AI | OP_NONCAMPAIGN_FLAG) // The E
+#define OP_AI_CHASE_SHIP_CLASS				(0x0013 | OP_CATEGORY_AI | OP_NONCAMPAIGN_FLAG)	// Goober5000
 
 #define OP_GOALS_ID							(0x0000 | OP_CATEGORY_UNLISTED)
 #define OP_NEXT_MISSION						(0x0001 | OP_CATEGORY_UNLISTED)		// used in campaign files for branching
@@ -831,7 +819,22 @@ class waypoint_list;
 #define SEXP_ALL_BANKS_STRING		"<all weapon banks>"
 
 // macros for accessing sexpression atoms
+/**
+ * @brief Returns the first element of a SEXP list
+ *
+ * The name CAR originates from the original LISP language where it was a function which retrieved the first element of
+ * a list.
+ *
+ * @see https://en.wikipedia.org/wiki/CAR_and_CDR
+ */
 #define CAR(n)		((n < 0) ? -1 : Sexp_nodes[n].first)
+/**
+ * @brief Returns the rest of a SEXP list. The rest is everything starting from the second element.
+ *
+ * The name CDR originates from the original LISP language where it was a function which retrieved the "rest" of a list.
+ *
+ * @see https://en.wikipedia.org/wiki/CAR_and_CDR
+ */
 #define CDR(n)		((n < 0) ? -1 : Sexp_nodes[n].rest)
 #define CADR(n)		CAR(CDR(n))
 // #define CTEXT(n)	(Sexp_nodes[n].text)
@@ -880,11 +883,6 @@ char *CTEXT(int n);
 // flags for sexpressions -- masked onto the end of the type field
 #define SEXP_FLAG_PERSISTENT				(1<<31)		// should this sexp node be persistant across missions
 #define SEXP_FLAG_VARIABLE					(1<<30)
-#define SEXP_FLAG_LIST_CONTAINER			(1<<29)
-#define SEXP_FLAG_MAP_CONTAINER				(1<<28)
-#define SEXP_FLAG_CONTAINER_MODIFIER		(1<<27)
-
-#define SEXP_FLAG_CONTAINER					(SEXP_FLAG_LIST_CONTAINER | SEXP_FLAG_MAP_CONTAINER)
 
 // sexp variable definitions
 #define SEXP_VARIABLE_CHAR					('@')
@@ -905,35 +903,6 @@ char *CTEXT(int n);
 #define SEXP_VARIABLE_CAMPAIGN_PERSISTENT	(1<<29)	//	(0x0100)
 //Karajorma
 #define SEXP_VARIABLE_NETWORK				(1<<28)
-
-// sexp container definitions
-#define SEXP_CONTAINER_CHAR					('&')
-#define SEXP_CONTAINER_LIST							(1<<0)
-#define SEXP_CONTAINER_MAP							(1<<1)
-#define SEXP_CONTAINER_STRONGLY_TYPED_KEYS			(1<<2)
-#define SEXP_CONTAINER_STRONGLY_TYPED_DATA			(1<<3)
-#define SEXP_CONTAINER_NUMBER_DATA					(1<<4)
-#define SEXP_CONTAINER_STRING_DATA					(1<<5)
-#define SEXP_CONTAINER_NUMBER_KEYS					(1<<6)
-#define SEXP_CONTAINER_STRING_KEYS					(1<<7)
-
-#define SEXP_CONTAINER_ALL			(SEXP_CONTAINER_LIST | SEXP_CONTAINER_MAP)
-// container modifiers - these are the "functions" you can carry out on a SEXP container
-#define SNF_CONTAINER_GET_FIRST				0
-#define SNF_CONTAINER_GET_LAST				1
-#define SNF_CONTAINER_REMOVE_FIRST			2
-#define SNF_CONTAINER_REMOVE_LAST			3
-#define SNF_CONTAINER_GET_RANDOM			4
-#define SNF_CONTAINER_REMOVE_RANDOM			5
-#define SNF_CONTAINER_AT_INDEX				6
-
-// Bump this if you add a container modifier on the line above!
-#define NUM_CONTAINER_MODIFIERS					7
-
-typedef struct container_modifier {
-	char *name;
-	int def;
-} container_modifier;
 
 #define BLOCK_EXP_SIZE					6
 #define INNER_RAD							0
@@ -959,7 +928,6 @@ typedef struct container_modifier {
 #define SEXP_ATOM_OPERATOR		1
 #define SEXP_ATOM_NUMBER		2
 #define SEXP_ATOM_STRING		3
-#define SEXP_ATOM_CONTAINER		4
 
 // defines to short circuit evaluation when possible. Also used when goals can't
 // be satisfied yet because ship (or wing) hasn't been created yet.
@@ -1066,7 +1034,7 @@ typedef struct sexp_ai_goal_link {
 #define SEXP_TRIGGER_OPERATOR		( SEXP_ARITHMETIC_OPERATOR | SEXP_BOOLEAN_OPERATOR | SEXP_INTEGER_OPERATOR ) 
 
 typedef struct sexp_oper {
-	char	*text;
+	const char	*text;
 	int	value;
 	int	min, max;
 	int type;
@@ -1094,15 +1062,6 @@ typedef struct sexp_variable {
 	char	variable_name[TOKEN_LENGTH];
 } sexp_variable;
 
-class sexp_container 
-{
-	public:
-		SCP_string	container_name;
-		int type;
-		int opf_type;
-		SCP_deque<SCP_string>	list_data;
-		SCP_unordered_map<SCP_string, SCP_string> map_data;
-};
 
 #define ARG_ITEM_F_DUP	(1<<0)
 
@@ -1139,11 +1098,6 @@ extern sexp_node *Sexp_nodes;
 extern sexp_variable Sexp_variables[MAX_SEXP_VARIABLES];
 extern sexp_variable Block_variables[MAX_SEXP_VARIABLES];
 
-extern SCP_vector<sexp_container> Sexp_containers;
-
-#define MAX_CONTAINER_MODIFIERS		7
-extern container_modifier Container_modifiers[MAX_CONTAINER_MODIFIERS];
-
 extern sexp_oper Operators[];
 extern int Num_operators;
 extern int Locked_sexp_true, Locked_sexp_false;
@@ -1172,10 +1126,9 @@ extern SCP_vector<int> Current_sexp_operator;
 extern SCP_vector<SCP_string> *Current_event_log_buffer;
 extern SCP_vector<SCP_string> *Current_event_log_variable_buffer;
 extern SCP_vector<SCP_string> *Current_event_log_argument_buffer;
-extern SCP_vector<SCP_string> *Current_event_log_container_buffer;
 
 extern void init_sexp();
-extern int alloc_sexp(char *text, int type, int subtype, int first, int rest);
+extern int alloc_sexp(const char *text, int type, int subtype, int first, int rest);
 extern int find_free_sexp();
 extern int free_one_sexp(int num);
 extern int free_sexp(int num);
@@ -1194,8 +1147,6 @@ extern int check_sexp_syntax(int node, int return_type = OPR_BOOL, int recursive
 extern int get_sexp_main(void);	//	Returns start node
 extern int run_sexp(const char* sexpression); // debug and lua sexps
 extern int stuff_sexp_variable_list();
-extern void stuff_sexp_list_container();
-extern void stuff_sexp_map_container();
 extern int eval_sexp(int cur_node, int referenced_node = -1);
 extern int is_sexp_true(int cur_node, int referenced_node = -1);
 extern int query_operator_return_type(int op);
@@ -1208,7 +1159,7 @@ extern void skip_white(char **str);
 extern int validate_float(char **str);
 extern int build_sexp_string(SCP_string &accumulator, int cur_node, int level, int mode);
 extern int sexp_query_type_match(int opf, int opr);
-extern char *sexp_error_message(int num);
+extern const char *sexp_error_message(int num);
 extern int count_free_sexp_nodes();
 
 // Goober5000
@@ -1225,7 +1176,7 @@ int query_node_in_sexp(int node, int sexp);
 void flush_sexp_tree(int node);
 
 // sexp_variable
-void sexp_modify_variable(char *text, int index, bool sexp_callback = true);
+void sexp_modify_variable(const char *text, int index, bool sexp_callback = true);
 int get_index_sexp_variable_from_node (int node);
 int get_index_sexp_variable_name(const char *text);
 int get_index_sexp_variable_name(SCP_string &text);	// Goober5000
@@ -1245,18 +1196,13 @@ bool generate_special_explosion_block_variables();
 int num_block_variables();
 bool has_special_explosion_block_index(ship *shipp, int *index);
 
-// sexp_container
-int get_index_sexp_container_name(const char *text);
-bool sexp_replace_container_with_values(char *text, int max_len); 
-bool sexp_replace_container_with_values(SCP_string &text);
-
 // Karajorma
-void set_primary_ammo (int ship_index, int requested_bank, int requested_ammo, int rearm_limit=-1, bool update=true);
-void set_secondary_ammo (int ship_index, int requested_bank, int requested_ammo, int rearm_limit=-1, bool update=true);
+void set_primary_ammo (int ship_index, int requested_bank, int requested_ammo, int rearm_limit=-1);
+void set_secondary_ammo (int ship_index, int requested_bank, int requested_ammo, int rearm_limit=-1);
 
 // DahBlount - Similar to Karajorma's functions, but for turrets
-void set_turret_primary_ammo(ship_subsys *turret, int requested_bank, int requested_ammo, bool update = true);
-void set_turret_secondary_ammo(ship_subsys *turret, int requested_bank, int requested_ammo, bool update = true);
+void set_turret_primary_ammo(ship_subsys *turret, int requested_bank, int requested_ammo);
+void set_turret_secondary_ammo(ship_subsys *turret, int requested_bank, int requested_ammo);
 
 // menu and category stuff
 extern int get_sexp_id(char *sexp_name);
@@ -1273,13 +1219,13 @@ extern int Knossos_warp_ani_used;
 //WMC - moved here from FRED
 typedef struct sexp_help_struct {
 	int id;
-	char *help;
+	const char *help;
 } sexp_help_struct;
 
 extern sexp_help_struct Sexp_help[];
 
 typedef struct op_menu_struct {
-	char *name;
+	const char *name;
 	int id;
 } op_menu_struct;
 
@@ -1292,24 +1238,24 @@ extern int Num_submenus;
 
 //WMC
 //Outputs sexp.html file
-bool output_sexps(char *filepath);
+bool output_sexps(const char *filepath);
 
 void multi_sexp_eval();
 
 // Goober5000/Taylor
 extern int Num_sound_environment_options;
-extern char *Sound_environment_option[];
+extern const char *Sound_environment_option[];
 
 // Goober5000
 extern int Num_explosion_options;
-extern char *Explosion_option[];
+extern const char *Explosion_option[];
 
 //The E
 extern int Num_adjust_audio_options;
-extern char *Adjust_audio_options[];
+extern const char *Adjust_audio_options[];
 
 extern int Num_skybox_flags;
-extern char *Skybox_flags[];
+extern const char *Skybox_flags[];
 
 /** Global state variables for the hud-display-gauge sexp.
 They all should be named Sexp_hud_display_*;

@@ -207,9 +207,7 @@ void hud_ship_icon_page_in(ship_info *sip)
 //
 void hud_shield_equalize(object *objp, player *pl)
 {
-	float strength;
-	int idx;
-	int all_equal;
+	float penalty;
 
 	Assert(objp != NULL);
 	if (objp == NULL)
@@ -224,34 +222,21 @@ void hud_shield_equalize(object *objp, player *pl)
 		return;
 
 	// Goober5000 - quick out if we have no shields
-	if (objp->flags & OF_NO_SHIELDS)
-		return;
-
-	// are all quadrants equal?
-	all_equal = 1;
-	for (idx = 0; idx < objp->n_quadrants - 1; idx++) {
-		if (objp->shield_quadrant[idx] != objp->shield_quadrant[idx + 1]) {
-			all_equal = 0;
-			break;
-		}
-	}
-
-	if (all_equal)
-		return;
-
-	strength = shield_get_strength(objp);
-	if (strength == 0.0f)
+	if (objp->flags[Object::Object_Flags::No_shields])
 		return;
 
 	// maybe impose a 2% penalty - server side and single player only
 	if (!MULTIPLAYER_CLIENT && ((pl->shield_penalty_stamp < 0) || timestamp_elapsed_safe(pl->shield_penalty_stamp, 1000)) ) {
-		strength *= 0.98f;
+		penalty = 0.02f;
 
 		// reset the penalty timestamp
 		pl->shield_penalty_stamp = timestamp(1000);
+
+	} else {
+		penalty = 0.0f;
 	}
-			
-	shield_set_strength(objp, strength);					
+
+	shield_balance(objp, 1, penalty);
 
 	// beep
 	if (objp == Player_obj) {
@@ -276,60 +261,7 @@ void hud_shield_equalize(object *objp, player *pl)
 //
 void hud_augment_shield_quadrant(object *objp, int direction)
 {
-	Assert(objp->type == OBJ_SHIP);
-
-	ship *shipp = &Ships[objp->instance];
-	ship_info *sip = &Ship_info[shipp->ship_info_index];
-	float	xfer_amount, energy_avail, percent_to_take, delta;
-	float	max_quadrant_val;
-	int	i;
-
-	if (sip->flags2 & SIF2_MODEL_POINT_SHIELDS) {
-		direction = sip->shield_point_augment_ctrls[direction];
-
-		// The re-mapped direction can be -1 if this direction cannot be augmented
-		if (direction < 0)
-			return;
-	}
-
-	Assert(direction >= 0 && direction < objp->n_quadrants);
-	
-	xfer_amount = shipp->ship_max_shield_strength * SHIELD_TRANSFER_PERCENT;
-	max_quadrant_val = get_max_shield_quad(objp);
-
-	if ( (objp->shield_quadrant[direction] + xfer_amount) > max_quadrant_val )
-		xfer_amount = max_quadrant_val - objp->shield_quadrant[direction];
-
-	Assert(xfer_amount >= 0);
-	if ( xfer_amount == 0 ) {
-		// TODO: provide a feedback sound
-		return;
-	}
-	else {
-		snd_play( &Snds[SND_SHIELD_XFER_OK] );
-	}
-
-	energy_avail = 0.0f;
-	for ( i = 0; i < objp->n_quadrants; i++ ) {
-		if ( i == direction )
-			continue;
-		energy_avail += objp->shield_quadrant[i];
-	}
-
-	percent_to_take = xfer_amount/energy_avail;
-	if ( percent_to_take > 1.0f )
-		percent_to_take = 1.0f;
-
-	for ( i = 0; i < objp->n_quadrants; i++ ) {
-		if ( i == direction )
-			continue;
-		delta = percent_to_take * objp->shield_quadrant[i];
-		objp->shield_quadrant[i] -= delta;
-		Assert(objp->shield_quadrant[i] >= 0 );
-		objp->shield_quadrant[direction] += delta;
-		if ( objp->shield_quadrant[direction] > max_quadrant_val )
-			objp->shield_quadrant[direction] = max_quadrant_val;
-	}
+	shield_transfer(objp, direction, SHIELD_TRANSFER_PERCENT);
 }
 
 // Try to find a match between filename and the names inside
@@ -422,11 +354,11 @@ void hud_shield_show_mini(object *objp, int x_force, int y_force, int x_hull_off
 
 	// draw the four quadrants
 	// Draw shield quadrants at one of NUM_SHIELD_LEVELS
-	max_shield = get_max_shield_quad(objp);
+	max_shield = shield_get_max_quad(objp);
 
 	for ( i = 0; i < objp->n_quadrants; i++ ) {
 
-		if ( objp->flags & OF_NO_SHIELDS || i >= DEFAULT_SHIELD_SECTIONS) {
+		if ( objp->flags[Object::Object_Flags::No_shields] || i >= DEFAULT_SHIELD_SECTIONS) {
 			break;
 		}
 
@@ -561,11 +493,11 @@ void hud_shield_quadrant_hit(object *objp, int quadrant)
 		return;
 	}
 
-	Assertion(shi->shield_hit_timers.size() > 0, "Shield hit info object for object '%s' has a size " SIZE_T_ARG " shield_hit_timers; get a coder!\n", Ships[objp->instance].ship_name, shi->shield_hit_timers.size());
+	Assertion(!shi->shield_hit_timers.empty(), "Shield hit info object for object '%s' has a size " SIZE_T_ARG " shield_hit_timers; get a coder!\n", Ships[objp->instance].ship_name, shi->shield_hit_timers.size());
 	Assertion(shi->hull_hit_index < (int) shi->shield_hit_timers.size(), "Shield hit info object for object '%s' has a hull_hit_index of %d (should be between 0 and " SIZE_T_ARG "); get a coder!\n", Ships[objp->instance].ship_name, shi->hull_hit_index, shi->shield_hit_timers.size() - 1);
 
 	if ( quadrant >= 0 ) {
-		if ( !(Ship_info[Ships[objp->instance].ship_info_index].flags2 & SIF2_MODEL_POINT_SHIELDS) )
+		if ( !(Ship_info[Ships[objp->instance].ship_info_index].flags[Ship::Info_Flags::Model_point_shields]) )
 			num = Quadrant_xlate[quadrant];
 		else
 			num = quadrant;
@@ -606,14 +538,14 @@ void HudGaugeShield::showShields(object *objp, int mode)
 		return;
 
 	// Goober5000 - don't show if primitive sensors
-	if ( Ships[Player_obj->instance].flags2 & SF2_PRIMITIVE_SENSORS )
+	if ( Ships[Player_obj->instance].flags[Ship::Ship_Flags::Primitive_sensors] )
 		return;
 
 	sp = &Ships[objp->instance];
 	sip = &Ship_info[sp->ship_info_index];
 
 //	bool digitus_improbus = (fod_model != -2 && strstr(sp->ship_name, "Sathanas") != NULL);
-	if ( sip->shield_icon_index == 255 && !(sip->flags2 & SIF2_GENERATE_HUD_ICON) /*&& !digitus_improbus*/) {
+	if ( sip->shield_icon_index == 255 && !(sip->flags[Ship::Info_Flags::Generate_hud_icon]) /*&& !digitus_improbus*/) {
 		return;
 	}
 
@@ -650,20 +582,24 @@ void HudGaugeShield::showShields(object *objp, int mode)
 	}
 	else
 	{
+		GR_DEBUG_SCOPE("Render generated shield icon");
+
 		bool g3_yourself = !g3_in_frame();
 		angles rot_angles = {-1.570796327f,0.0f,0.0f};
 		matrix	object_orient;
 
 		vm_angles_2_matrix(&object_orient, &rot_angles);
 
-		gr_screen.clip_width = 112;
-		gr_screen.clip_height = 93;
+		const int CLIP_WIDTH = 112;
+		const int CLIP_HEIGHT = 93;
+		gr_screen.clip_width = CLIP_WIDTH;
+		gr_screen.clip_height = CLIP_HEIGHT;
 
 		//Fire it up
 		if(g3_yourself)
 			g3_start_frame(1);
 		hud_save_restore_camera_data(1);
-		setClip(sx, sy, 112, 93);
+		setClip(sx, sy, CLIP_WIDTH, CLIP_HEIGHT);
 
 		//if(!digitus_improbus)
 			g3_set_view_matrix( &sip->closeup_pos, &vmd_identity_matrix, sip->closeup_zoom * 2.5f);
@@ -718,27 +654,28 @@ void HudGaugeShield::showShields(object *objp, int mode)
 	// draw the quadrants
 	//
 	// Draw shield quadrants at one of NUM_SHIELD_LEVELS
-	max_shield = get_max_shield_quad(objp);
+	max_shield = shield_get_max_quad(objp);
 
 	coord2d shield_icon_coords[6];
 
 	for ( i = 0; i < objp->n_quadrants; i++ ) {
 
-		if ( objp->flags & OF_NO_SHIELDS ) {
+		if ( objp->flags[Object::Object_Flags::No_shields] ) {
 			break;
 		}
 
-		if ( !(sip->flags2 & SIF2_MODEL_POINT_SHIELDS) ) {
+		if ( !(sip->flags[Ship::Info_Flags::Model_point_shields]) ) {
 			if ( objp->shield_quadrant[Quadrant_xlate[i]] < 0.1f )
 				continue;
 		} else {
 			if ( objp->shield_quadrant[i] < 0.1f )
 				continue;
 		}
+		GR_DEBUG_SCOPE("Render shield quadrant");
 
 		range = MAX(HUD_COLOR_ALPHA_MAX, HUD_color_alpha + objp->n_quadrants);
 
-		if ( !(sip->flags2 & SIF2_MODEL_POINT_SHIELDS) )
+		if ( !(sip->flags[Ship::Info_Flags::Model_point_shields]) )
 			hud_color_index = fl2i( (objp->shield_quadrant[Quadrant_xlate[i]] / max_shield) * range);
 		else
 			hud_color_index = fl2i( (objp->shield_quadrant[i] / max_shield) * range);
@@ -772,7 +709,7 @@ void HudGaugeShield::showShields(object *objp, int mode)
 				//Ugh, draw four shield quadrants
 				static const int TRI_EDGE = 6;
 				static const int BAR_LENGTH = 112;
-				static const int BAR_HEIGHT = 54;
+				static const int BAR_HEIGHT = 63;
 				static const int BAR_WIDTH = 6;
 				static const int SHIELD_OFFSET = BAR_WIDTH + TRI_EDGE + 3;
 
@@ -856,6 +793,13 @@ void HudGaugeShield::renderShieldIcon(coord2d coords[6])
 
 	if ( gr_screen.rendering_to_texture != -1 ) {
 		gr_set_screen_scale(canvas_w, canvas_h, -1, -1, target_w, target_h, target_w, target_h, true);
+
+		// Respect the rendering display offset specified in the table
+		nx = display_offset_x;
+		ny = display_offset_y;
+
+		// Transfer the offset position into actual texture coordinates
+		gr_unsize_screen_pos(&nx, &ny);
 	} else {
 		if ( reticle_follow ) {
 			nx = HUD_nose_x;
@@ -874,7 +818,8 @@ void HudGaugeShield::renderShieldIcon(coord2d coords[6])
 		coords[i].y += ny;
 	}
 
-	gr_shield_icon(coords);
+	//gr_shield_icon(coords);
+	g3_render_shield_icon(coords);
 	gr_reset_screen_scale();
 }
 
@@ -1006,11 +951,11 @@ void HudGaugeShieldMini::showMiniShields(object *objp)
 
 	// draw the four quadrants
 	// Draw shield quadrants at one of NUM_SHIELD_LEVELS
-	max_shield = get_max_shield_quad(objp);
+	max_shield = shield_get_max_quad(objp);
 
 	for ( i = 0; i < objp->n_quadrants; i++ ) {
 
-		if ( objp->flags & OF_NO_SHIELDS ) {
+		if ( objp->flags[Object::Object_Flags::No_shields] ) {
 			break;
 		}
 

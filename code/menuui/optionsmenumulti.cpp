@@ -32,22 +32,22 @@
 // general data section ------------------------------------------------
 UI_WINDOW *Om_window = NULL;
 
-static char* Om_background_0_fname[GR_NUM_RESOLUTIONS] = {
+static const char* Om_background_0_fname[GR_NUM_RESOLUTIONS] = {
 	"OptionsMultiGen",			// GR_640
 	"2_OptionsMultiGen"			// GR_1024
 };
 
-static char* Om_background_0_mask_fname[GR_NUM_RESOLUTIONS] = {
+static const char* Om_background_0_mask_fname[GR_NUM_RESOLUTIONS] = {
 	"OptionsMultiGen-M",			// GR_640
 	"2_OptionsMultiGen-M"		// GR_1024
 };
 
-static char* Om_background_1_fname[GR_NUM_RESOLUTIONS] = {
+static const char* Om_background_1_fname[GR_NUM_RESOLUTIONS] = {
 	"OptionsMultiVox",			// GR_640
 	"2_OptionsMultiVox"			// GR_1024
 };
 
-static char* Om_background_1_mask_fname[GR_NUM_RESOLUTIONS] = {
+static const char* Om_background_1_mask_fname[GR_NUM_RESOLUTIONS] = {
 	"OptionsMultiVox-M",			// GR_640
 	"2_OptionsMultiVox-M"		// GR_1024
 };
@@ -1213,7 +1213,7 @@ void options_multi_protocol_display_ips()
 			gr_set_color_fast(&Color_white);
 		}
 
-		gr_printf_menu(Ip_list_coords[gr_screen.res][0], y_start, Om_ip_addrs[idx]);
+		gr_printf_menu(Ip_list_coords[gr_screen.res][0], y_start, "%s", Om_ip_addrs[idx]);
 		y_start += line_height;
 	}
 }
@@ -1654,10 +1654,11 @@ void options_multi_load_vox_controls()
 	// sliders
 	for ( idx = 0; idx < NUM_OM_VOX_SLIDERS; idx++ ) {
 		 Om_vox_sliders[gr_screen.res][idx].slider.create(Om_window, Om_vox_sliders[gr_screen.res][idx].x, Om_vox_sliders[gr_screen.res][idx].y,
-																		Om_vox_sliders[gr_screen.res][idx].dots, Om_vox_sliders[gr_screen.res][idx].filename,
-																		Om_vox_sliders[gr_screen.res][idx].hotspot, Om_vox_sliders[gr_screen.res][idx].right_filename, Om_vox_sliders[gr_screen.res][idx].right_mask, Om_vox_sliders[gr_screen.res][idx].right_x, Om_vox_sliders[gr_screen.res][idx].right_y,
-																		Om_vox_sliders[gr_screen.res][idx].left_filename, Om_vox_sliders[gr_screen.res][idx].left_mask, Om_vox_sliders[gr_screen.res][idx].left_x, Om_vox_sliders[gr_screen.res][idx].left_y,
-																		Om_vox_sliders[gr_screen.res][idx].dot_w);
+																Om_vox_sliders[gr_screen.res][idx].dots, Om_vox_sliders[gr_screen.res][idx].filename,
+																Om_vox_sliders[gr_screen.res][idx].hotspot,
+																Om_vox_sliders[gr_screen.res][idx].left_filename, Om_vox_sliders[gr_screen.res][idx].left_mask, Om_vox_sliders[gr_screen.res][idx].left_x, Om_vox_sliders[gr_screen.res][idx].left_y,
+																Om_vox_sliders[gr_screen.res][idx].right_filename, Om_vox_sliders[gr_screen.res][idx].right_mask, Om_vox_sliders[gr_screen.res][idx].right_x, Om_vox_sliders[gr_screen.res][idx].right_y,
+																Om_vox_sliders[gr_screen.res][idx].dot_w);
 	}	
 
 	// create the player list select button

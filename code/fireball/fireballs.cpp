@@ -19,7 +19,9 @@
 #include "object/object.h"
 #include "parse/parselo.h"
 #include "render/3d.h"
+#include "render/batching.h"
 #include "ship/ship.h"
+#include "tracing/Monitor.h"
 
 #include <stdlib.h>
 
@@ -76,10 +78,10 @@ void fireball_play_warphole_open_sound(int ship_class, fireball *fb)
 	if(fb->warp_open_sound_index > -1) {
 		sound_index = fb->warp_open_sound_index;
 	} else if ((ship_class >= 0) && (ship_class < static_cast<int>(Ship_info.size()))) {
-		if ( Ship_info[ship_class].flags & SIF_HUGE_SHIP ) {
+		if ( Ship_info[ship_class].is_huge_ship() ) {
 			sound_index = SND_CAPITAL_WARP_IN;
 			fb->flags |= FBF_WARP_CAPITAL_SIZE;
-		} else if ( Ship_info[ship_class].flags & SIF_BIG_SHIP ) {
+		} else if ( Ship_info[ship_class].is_big_ship() ) {
 			range_multiplier = 6.0f;
 			fb->flags |= FBF_WARP_CRUISER_SIZE;
 		}
@@ -462,7 +464,7 @@ int fireball_is_perishable(object * obj)
 		return 1;
 
 	if ( !(fb->fireball_render_type == FIREBALL_WARP_EFFECT) )	{
-		if ( !(obj->flags & OF_WAS_RENDERED))	{
+		if ( !(obj->flags[Object::Object_Flags::Was_rendered]))	{
 			return 1;
 		}
 	}
@@ -564,7 +566,7 @@ void fireball_process_post(object * obj, float frame_time)
 
 	fb->time_elapsed += frame_time;
 	if ( fb->time_elapsed > fb->total_time ) {
-		obj->flags |= OF_SHOULD_BE_DEAD;
+        obj->flags.set(Object::Object_Flags::Should_be_dead);
 	}
 
 	fireball_maybe_play_warp_close_sound(fb);
@@ -767,7 +769,9 @@ int fireball_create( vec3d * pos, int fireball_type, int render_type, int parent
 		}
 	}
 	
-	objnum = obj_create(OBJ_FIREBALL, parent_obj, n, &orient, pos, size, OF_RENDERS);
+    flagset<Object::Object_Flags> default_flags;
+    default_flags.set(Object::Object_Flags::Renders);
+	objnum = obj_create(OBJ_FIREBALL, parent_obj, n, &orient, pos, size, default_flags);
 
 	if (objnum < 0) {
 		Int3();				// Get John, we ran out of objects for fireballs
@@ -825,7 +829,7 @@ int fireball_create( vec3d * pos, int fireball_type, int render_type, int parent
 
 	if ( velocity )	{
 		// Make the explosion move at a constant velocity.
-		obj->flags |= OF_PHYSICS;
+        obj->flags.set(Object::Object_Flags::Physics);
 		obj->phys_info.mass = 1.0f;
 		obj->phys_info.side_slip_time_const = 0.0f;
 		obj->phys_info.rotdamp = 0.0f;
@@ -961,7 +965,7 @@ float fireball_wormhole_intensity( object *obj )
 	return rad;
 } 
 
-void fireball_render(object* obj, draw_list *scene)
+void fireball_render(object* obj, model_draw_list *scene)
 {
 	int		num;
 	vertex	p;
@@ -980,25 +984,13 @@ void fireball_render(object* obj, draw_list *scene)
 	switch ( fb->fireball_render_type )	{
 
 		case FIREBALL_MEDIUM_EXPLOSION: {
-			batch_add_bitmap (
-				Fireballs[num].current_bitmap, 
-				TMAP_FLAG_TEXTURED | TMAP_HTL_3D_UNLIT | TMAP_FLAG_SOFT_QUAD | TMAP_FLAG_EMISSIVE, 
-				&p, 
-				fb->orient, 
-				obj->radius
-				);
+			batching_add_volume_bitmap(Fireballs[num].current_bitmap, &p, fb->orient, obj->radius);
 		}
 		break;
 
 		case FIREBALL_LARGE_EXPLOSION: {
 			// Make the big explosions rotate with the viewer.
-			batch_add_bitmap_rotated ( 
-				Fireballs[num].current_bitmap, 
-				TMAP_FLAG_TEXTURED | TMAP_HTL_3D_UNLIT | TMAP_FLAG_SOFT_QUAD | TMAP_FLAG_EMISSIVE, 
-				&p, 
-				(i2fl(fb->orient)*PI)/180.0f,
-				obj->radius
-				);
+			batching_add_volume_bitmap_rotated(Fireballs[num].current_bitmap, &p, (i2fl(fb->orient)*PI) / 180.0f, obj->radius);
 		}
 		break;
 

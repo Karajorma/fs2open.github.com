@@ -1,11 +1,13 @@
 # top-level files
 set (file_root
+	prefix_header.h
 )
 
 # AI files
 set (file_root_ai
 	ai/ai.cpp
 	ai/ai.h
+	ai/ai_flags.h
 	ai/ai_profiles.cpp
 	ai/ai_profiles.h
 	ai/aibig.cpp
@@ -82,18 +84,32 @@ set (file_root_controlconfig
 
 # Cutscene files
 set (file_root_cutscene
+	cutscene/Decoder.cpp
+	cutscene/Decoder.h
 	cutscene/cutscenes.cpp
 	cutscene/cutscenes.h
-	cutscene/decoder16.cpp
-	cutscene/decoder8.cpp
 	cutscene/movie.cpp
 	cutscene/movie.h
-	cutscene/mve_audio.cpp
-	cutscene/mvelib.cpp
-	cutscene/mvelib.h
-	cutscene/mveplayer.cpp
-	cutscene/oggplayer.cpp
-	cutscene/oggplayer.h
+	cutscene/player.cpp
+	cutscene/player.h
+)
+
+# Cutscene\ffmpeg files
+set (file_root_cutscene_ffmpeg
+	cutscene/ffmpeg/AudioDecoder.cpp
+	cutscene/ffmpeg/AudioDecoder.h
+	cutscene/ffmpeg/FFMPEGDecoder.cpp
+	cutscene/ffmpeg/FFMPEGDecoder.h
+	cutscene/ffmpeg/internal.cpp
+	cutscene/ffmpeg/internal.h
+	cutscene/ffmpeg/VideoDecoder.cpp
+	cutscene/ffmpeg/VideoDecoder.h
+)
+
+set(file_root_cutscene_player
+	cutscene/player/VideoPresenter.h
+	cutscene/player/OpenGLVideoPresenter.cpp
+	cutscene/player/OpenGLVideoPresenter.h
 )
 
 # ddsutils files
@@ -121,7 +137,7 @@ set (file_root_debugconsole
 SET(file_root_def_files
 	def_files/def_files.h
 )
-if(WIN32)
+if(MSVC)
 	SET(file_root_def_files
 		${file_root_def_files}
 		def_files/def_files-win32.cpp
@@ -172,6 +188,8 @@ SET(file_root_def_files_files
 	def_files/tonemapping-f.sdr
 	def_files/video-f.sdr
 	def_files/video-v.sdr
+	def_files/shield-impact-v.sdr
+	def_files/shield-impact-f.sdr
 )
 
 # ExceptionHandler files
@@ -183,8 +201,6 @@ set (file_root_exceptionhandler
 # ExternalDLL files
 set (file_root_externaldll
 	external_dll/externalcode.h
-	external_dll/trackirglobal.cpp
-	external_dll/trackirpublic.h
 )
 
 # Fireball files
@@ -240,11 +256,9 @@ set (file_root_globalincs
 	globalincs/fsmemory.h
 	globalincs/globals.h
 	globalincs/linklist.h
-	globalincs/profiling.cpp
 	globalincs/pstypes.h
 	globalincs/safe_strings.cpp
 	globalincs/safe_strings.h
-	globalincs/safe_strings_test.cpp
 	globalincs/systemvars.cpp
 	globalincs/systemvars.h
 	globalincs/toolchain.h
@@ -252,6 +266,7 @@ set (file_root_globalincs
 	globalincs/version.h
 	globalincs/vmallocator.h
 	globalincs/scp_defines.h
+	globalincs/flagset.h
 )
 
 IF (WIN32)
@@ -266,26 +281,8 @@ ENDIF(WIN32)
 set(file_root_globalincs_memory
 	globalincs/memory/memory.h
 	globalincs/memory/memory.cpp
-	globalincs/memory/newdelete.cpp
-	globalincs/memory/debug.h
-	globalincs/memory/debug.cpp
-	globalincs/memory/release.h
 	globalincs/memory/utils.h
 )
-
-# Add conditions for compiler specialization
-if (MSVC)
-set(file_root_globalincs_memory
-	${file_root_globalincs_memory}
-	globalincs/memory/debug_msvc.cpp
-)
-else()
-	# If no compiler matches, use the default version
-	set(file_root_globalincs_memory
-		${file_root_globalincs_memory}
-		globalincs/memory/debug_generic.cpp
-	)
-endif()
 
 set(file_root_globalincs_toolchain
 	globalincs/toolchain/clang.h
@@ -305,6 +302,8 @@ set (file_root_graphics
 	graphics/tmapper.h
 	graphics/shadows.cpp
 	graphics/shadows.h
+	graphics/material.cpp
+	graphics/material.h
 )
 
 # Graphics -> OpenGLGr files
@@ -313,33 +312,32 @@ set (file_root_graphics_openglgr
 
 # Graphics -> OpenGLGr -> OpenGL CPPs files
 set (file_root_graphics_openglgr_opengl_cpps
-	graphics/gropengl.cpp
-	graphics/gropenglbmpman.cpp
-	graphics/gropengldraw.cpp
-	graphics/gropengllight.cpp
-	graphics/gropenglpostprocessing.cpp
-	graphics/gropenglshader.cpp
-	graphics/gropenglstate.cpp
-	graphics/gropengltexture.cpp
-	graphics/gropengltnl.cpp
+	graphics/opengl/gropengl.cpp
+	graphics/opengl/gropenglbmpman.cpp
+	graphics/opengl/gropengldraw.cpp
+	graphics/opengl/gropengllight.cpp
+	graphics/opengl/gropenglpostprocessing.cpp
+	graphics/opengl/gropenglquery.cpp
+	graphics/opengl/gropenglshader.cpp
+	graphics/opengl/gropenglstate.cpp
+	graphics/opengl/gropengltexture.cpp
+	graphics/opengl/gropengltnl.cpp
+	graphics/opengl/ShaderProgram.cpp
 )
 
 # Graphics -> OpenGLGr -> OpenGL Headers files
 set (file_root_graphics_openglgr_opengl_headers
-	graphics/gropengl.h
-	graphics/gropenglbmpman.h
-	graphics/gropengldraw.h
-	graphics/gropengllight.h
-	graphics/gropenglpostprocessing.h
-	graphics/gropenglshader.h
-	graphics/gropenglstate.h
-	graphics/gropengltexture.h
-	graphics/gropengltnl.h
-)
-
-# Graphics -> OpenGLGr -> GL files
-set (file_root_graphics_openglgr_gl
-	graphics/gl/glu.h
+	graphics/opengl/gropengl.h
+	graphics/opengl/gropenglbmpman.h
+	graphics/opengl/gropengldraw.h
+	graphics/opengl/gropengllight.h
+	graphics/opengl/gropenglpostprocessing.h
+	graphics/opengl/gropenglquery.h
+	graphics/opengl/gropenglshader.h
+	graphics/opengl/gropenglstate.h
+	graphics/opengl/gropengltexture.h
+	graphics/opengl/gropengltnl.h
+	graphics/opengl/ShaderProgram.h
 )
 
 # Graphics -> Paths
@@ -386,6 +384,26 @@ set (file_root_graphics_softwaregr_font
 	graphics/software/VFNTFont.h
 	graphics/software/VFNTFont.cpp
 )
+
+# HeadTracking files
+set (file_root_headtracking
+	headtracking/headtracking_internal.h
+	headtracking/headtracking.h
+	headtracking/headtracking.cpp
+)
+if(WIN32)
+	set(file_root_headtracking
+		${file_root_headtracking}
+
+		headtracking/freetrack.h
+		headtracking/freetrack.cpp
+
+		headtracking/trackir.h
+		headtracking/trackir.cpp
+		headtracking/trackirpublic.h
+		headtracking/trackirpublic.cpp
+	)
+endif()
 
 # Hud files
 set (file_root_hud
@@ -480,6 +498,17 @@ set (file_root_lab
 	lab/wmcgui.h
 )
 
+set(file_root_libs
+)
+
+set(file_root_libs_ffmpeg
+	libs/ffmpeg/FFmpeg.cpp
+	libs/ffmpeg/FFmpeg.h
+	libs/ffmpeg/FFmpegContext.cpp
+	libs/ffmpeg/FFmpegContext.h
+	libs/ffmpeg/FFmpegHeaders.h
+)
+
 # Lighting files
 set (file_root_lighting
 	lighting/lighting.cpp
@@ -561,6 +590,7 @@ set (file_root_mission
 	mission/missionparse.h
 	mission/missiontraining.cpp
 	mission/missiontraining.h
+	mission/mission_flags.h
 )
 
 # MissionUI files
@@ -607,6 +637,7 @@ set (file_root_model
 	model/modelrender.h
 	model/modelrender.cpp
 	model/modelsinc.h
+	model/model_flags.h
 )
 
 # Nebula files
@@ -719,6 +750,7 @@ set (file_root_object
 	object/parseobjectdock.h
 	object/waypoint.cpp
 	object/waypoint.h
+	object/object_flags.h
 )
 
 # Observer files
@@ -729,6 +761,8 @@ set (file_root_observer
 
 # OsApi files
 set (file_root_osapi
+	osapi/DebugWindow.h
+	osapi/DebugWindow.cpp
 	osapi/osapi.h
 	osapi/osapi.cpp
 	osapi/dialogs.h
@@ -739,24 +773,14 @@ set (file_root_osapi
 	osapi/outwnd.cpp
 )
 
-# Palman files
-set (file_root_palman
-	palman/palman.cpp
-	palman/palman.h
-)
-
 # Parse files
 set (file_root_parse
 	parse/encrypt.cpp
 	parse/encrypt.h
 	parse/generic_log.cpp
 	parse/generic_log.h
-	parse/lua.cpp
-	parse/lua.h
 	parse/parselo.cpp
 	parse/parselo.h
-	parse/scripting.cpp
-	parse/scripting.h
 	parse/sexp.cpp
 	parse/sexp.h
 )
@@ -765,6 +789,35 @@ set (file_root_parse
 set (file_root_particle
 	particle/particle.cpp
 	particle/particle.h
+	particle/ParticleEffect.h
+	particle/ParticleManager.cpp
+	particle/ParticleManager.h
+	particle/ParticleSource.cpp
+	particle/ParticleSource.h
+	particle/ParticleSourceWrapper.cpp
+	particle/ParticleSourceWrapper.h
+)
+
+set(file_root_particle_effects
+	particle/effects/BeamPiercingEffect.cpp
+	particle/effects/BeamPiercingEffect.h
+	particle/effects/CompositeEffect.cpp
+	particle/effects/CompositeEffect.h
+	particle/effects/ConeShape.h
+	particle/effects/GenericShapeEffect.h
+	particle/effects/ParticleEmitterEffect.cpp
+	particle/effects/ParticleEmitterEffect.h
+	particle/effects/SingleParticleEffect.cpp
+	particle/effects/SingleParticleEffect.h
+	particle/effects/SphereShape.h
+)
+
+set(file_root_particle_util
+	particle/util/EffectTiming.cpp
+	particle/util/EffectTiming.h
+	particle/util/RandomRange.h
+	particle/util/ParticleProperties.cpp
+	particle/util/ParticleProperties.h
 )
 
 # PcxUtils files
@@ -781,7 +834,12 @@ set (file_root_physics
 
 # PilotFile files
 set (file_root_pilotfile
+	pilotfile/BinaryFileHandler.cpp
+	pilotfile/BinaryFileHandler.h
 	pilotfile/csg.cpp
+	pilotfile/FileHandler.h
+	pilotfile/JSONFileHandler.cpp
+	pilotfile/JSONFileHandler.h
 	pilotfile/csg_convert.cpp
 	pilotfile/pilotfile.cpp
 	pilotfile/pilotfile.h
@@ -834,6 +892,145 @@ set (file_root_render
 	render/3dlaser.cpp
 	render/3dmath.cpp
 	render/3dsetup.cpp
+	render/batching.cpp
+	render/batching.h
+)
+
+set(file_root_scripting
+	scripting/ade.cpp
+	scripting/ade.h
+	scripting/ade_api.h
+	scripting/ade_args.cpp
+	scripting/ade_args.h
+	scripting/lua.cpp
+	scripting/scripting.cpp
+	scripting/scripting.h
+)
+
+set(file_root_scripting_api_libs
+	scripting/api/libs/audio.cpp
+	scripting/api/libs/audio.h
+	scripting/api/libs/base.cpp
+	scripting/api/libs/base.h
+	scripting/api/libs/bitops.cpp
+	scripting/api/libs/bitops.h
+	scripting/api/libs/cfile.cpp
+	scripting/api/libs/cfile.h
+	scripting/api/libs/hookvars.cpp
+	scripting/api/libs/hookvars.h
+	scripting/api/libs/hud.cpp
+	scripting/api/libs/hud.h
+	scripting/api/libs/mission.cpp
+	scripting/api/libs/mission.h
+	scripting/api/libs/tables.cpp
+	scripting/api/libs/tables.h
+	scripting/api/libs/testing.cpp
+	scripting/api/libs/testing.h
+)
+
+set(file_root_scripting_api_objs
+	scripting/api/objs/asteroid.cpp
+	scripting/api/objs/asteroid.h
+	scripting/api/objs/beam.cpp
+	scripting/api/objs/beam.h
+	scripting/api/objs/camera.cpp
+	scripting/api/objs/camera.h
+	scripting/api/objs/cockpit_display.cpp
+	scripting/api/objs/cockpit_display.h
+	scripting/api/objs/control_info.cpp
+	scripting/api/objs/control_info.h
+	scripting/api/objs/controls.cpp
+	scripting/api/objs/controls.h
+	scripting/api/objs/debris.cpp
+	scripting/api/objs/debris.h
+	scripting/api/objs/enums.cpp
+	scripting/api/objs/enums.h
+	scripting/api/objs/event.cpp
+	scripting/api/objs/event.h
+	scripting/api/objs/eye.cpp
+	scripting/api/objs/eye.h
+	scripting/api/objs/file.cpp
+	scripting/api/objs/file.h
+	scripting/api/objs/font.cpp
+	scripting/api/objs/font.h
+	scripting/api/objs/gameevent.cpp
+	scripting/api/objs/gameevent.h
+	scripting/api/objs/gamestate.cpp
+	scripting/api/objs/gamestate.h
+	scripting/api/objs/graphics.cpp
+	scripting/api/objs/graphics.h
+	scripting/api/objs/hudgauge.cpp
+	scripting/api/objs/hudgauge.h
+	scripting/api/objs/mc_info.cpp
+	scripting/api/objs/mc_info.h
+	scripting/api/objs/message.cpp
+	scripting/api/objs/message.h
+	scripting/api/objs/model.cpp
+	scripting/api/objs/model.h
+	scripting/api/objs/object.cpp
+	scripting/api/objs/object.h
+	scripting/api/objs/order.cpp
+	scripting/api/objs/order.h
+	scripting/api/objs/particle.cpp
+	scripting/api/objs/particle.h
+	scripting/api/objs/physics_info.cpp
+	scripting/api/objs/physics_info.h
+	scripting/api/objs/player.cpp
+	scripting/api/objs/player.h
+	scripting/api/objs/sexpvar.cpp
+	scripting/api/objs/sexpvar.h
+	scripting/api/objs/shields.cpp
+	scripting/api/objs/shields.h
+	scripting/api/objs/ship_bank.cpp
+	scripting/api/objs/ship_bank.h
+	scripting/api/objs/shipclass.cpp
+	scripting/api/objs/shipclass.h
+	scripting/api/objs/ship.cpp
+	scripting/api/objs/ship.h
+	scripting/api/objs/shiptype.cpp
+	scripting/api/objs/shiptype.h
+	scripting/api/objs/sound.cpp
+	scripting/api/objs/sound.h
+	scripting/api/objs/species.cpp
+	scripting/api/objs/species.h
+	scripting/api/objs/streaminganim.cpp
+	scripting/api/objs/streaminganim.h
+	scripting/api/objs/subsystem.cpp
+	scripting/api/objs/subsystem.h
+	scripting/api/objs/team.cpp
+	scripting/api/objs/team.h
+	scripting/api/objs/texture.cpp
+	scripting/api/objs/texture.h
+	scripting/api/objs/texturemap.cpp
+	scripting/api/objs/texturemap.h
+	scripting/api/objs/vecmath.cpp
+	scripting/api/objs/vecmath.h
+	scripting/api/objs/waypoint.cpp
+	scripting/api/objs/waypoint.h
+	scripting/api/objs/weaponclass.cpp
+	scripting/api/objs/weaponclass.h
+	scripting/api/objs/weapon.cpp
+	scripting/api/objs/weapon.h
+	scripting/api/objs/wing.cpp
+	scripting/api/objs/wing.h
+)
+
+set(file_root_scripting_lua
+	scripting/lua/LuaArgs.cpp
+	scripting/lua/LuaArgs.h
+	scripting/lua/LuaConvert.h
+	scripting/lua/LuaException.h
+	scripting/lua/LuaFunction.cpp
+	scripting/lua/LuaFunction.h
+	scripting/lua/LuaHeaders.h
+	scripting/lua/LuaReference.cpp
+	scripting/lua/LuaReference.h
+	scripting/lua/LuaTable.cpp
+	scripting/lua/LuaTable.h
+	scripting/lua/LuaUtil.cpp
+	scripting/lua/LuaUtil.h
+	scripting/lua/LuaValue.cpp
+	scripting/lua/LuaValue.h
 )
 
 # Ship files
@@ -852,13 +1049,12 @@ set (file_root_ship
 	ship/shiphit.cpp
 	ship/shiphit.h
 	ship/subsysdamage.h
+	ship/ship_flags.h
 )
 
 # Sound files
 set (file_root_sound
-	sound/acm.cpp
-	sound/acm.h
-	sound/audiostr.cpp
+		sound/audiostr.cpp
 	sound/audiostr.h
 	sound/channel.h
 	sound/ds.cpp
@@ -882,10 +1078,12 @@ set (file_root_sound
 	sound/voicerec.h
 )
 
-# Sound -> ogg files
-set (file_root_sound_ogg
-	sound/ogg/ogg.cpp
-	sound/ogg/ogg.h
+# Sound -> ffmpeg files
+set (file_root_sound_ffmpeg
+	sound/ffmpeg/FFmpegAudioReader.cpp
+	sound/ffmpeg/FFmpegAudioReader.h
+	sound/ffmpeg/WaveFile.cpp
+	sound/ffmpeg/WaveFile.h
 )
 
 # Species_Defs files
@@ -920,6 +1118,25 @@ set (file_root_tgautils
 	tgautils/tgautils.h
 )
 
+# Tracing files
+set (file_root_tracing
+	tracing/categories.cpp
+	tracing/categories.h
+	tracing/FrameProfiler.h
+	tracing/FrameProfiler.cpp
+	tracing/MainFrameTimer.h
+	tracing/MainFrameTimer.cpp
+	tracing/Monitor.h
+	tracing/Monitor.cpp
+	tracing/scopes.cpp
+	tracing/scopes.h
+	tracing/ThreadedEventProcessor.h
+	tracing/TraceEventWriter.h
+	tracing/TraceEventWriter.cpp
+	tracing/tracing.h
+	tracing/tracing.cpp
+)
+
 # Ui files
 set (file_root_ui
 	ui/button.cpp
@@ -938,6 +1155,15 @@ set (file_root_ui
 	ui/uidraw.cpp
 	ui/uimouse.cpp
 	ui/window.cpp
+)
+
+set(file_root_utils
+	utils/strings.h
+)
+
+# Utils files
+set (file_root_utils_boost
+	utils/boost/syncboundedqueue.h
 )
 
 # Weapon files
@@ -960,6 +1186,7 @@ set (file_root_weapon
 	weapon/trails.h
 	weapon/weapon.h
 	weapon/weapons.cpp
+	weapon/weapon_flags.h
 )
 
 # Windows stubs files
@@ -987,6 +1214,8 @@ source_group("Cmdline"                            FILES ${file_root_cmdline})
 source_group("CMeasure"                           FILES ${file_root_cmeasure})
 source_group("ControlConfig"                      FILES ${file_root_controlconfig})
 source_group("Cutscene"                           FILES ${file_root_cutscene})
+source_group("Cutscene\\ffmpeg"                   FILES ${file_root_cutscene_ffmpeg})
+source_group("Cutscene\\Player"                   FILES ${file_root_cutscene_player})
 source_group("ddsutils"                           FILES ${file_root_ddsutils})
 source_group("Debris"                             FILES ${file_root_debris})
 source_group("DebugConsole"                       FILES ${file_root_debugconsole})
@@ -1007,11 +1236,11 @@ source_group("Graphics"                           FILES ${file_root_graphics})
 source_group("Graphics\\OpenGLGr"                 FILES ${file_root_graphics_openglgr})
 source_group("Graphics\\OpenGLGr\\OpenGL CPPs"    FILES ${file_root_graphics_openglgr_opengl_cpps})
 source_group("Graphics\\OpenGLGr\\OpenGL Headers" FILES ${file_root_graphics_openglgr_opengl_headers})
-source_group("Graphics\\OpenGLGr\\GL"             FILES ${file_root_graphics_openglgr_gl})
 source_group("Graphics\\Paths"                    FILES ${file_root_graphics_paths})
 source_group("Graphics\\Paths\\nanovg"            FILES ${file_root_graphics_paths_nanovg})
 source_group("Graphics\\SoftwareGr"               FILES ${file_root_graphics_softwaregr})
 source_group("Graphics\\SoftwareGr\\Font"         FILES ${file_root_graphics_softwaregr_font})
+source_group("HeadTracking"                       FILES ${file_root_headtracking})
 source_group("Hud"                                FILES ${file_root_hud})
 source_group("iff_defs"                           FILES ${file_root_iff_defs})
 source_group("InetFile"                           FILES ${file_root_inetfile})
@@ -1019,6 +1248,8 @@ source_group("Io"                                 FILES ${file_root_io})
 source_group("jpgutils"                           FILES ${file_root_jpgutils})
 source_group("JumpNode"                           FILES ${file_root_jumpnode})
 source_group("Lab"                                FILES ${file_root_lab})
+source_group("Libs"                               FILES ${file_root_libs})
+source_group("Libs\\FFmpeg"                       FILES ${file_root_libs_ffmpeg})
 source_group("Lighting"                           FILES ${file_root_lighting})
 source_group("Localization"                       FILES ${file_root_localization})
 source_group("Math"                               FILES ${file_root_math})
@@ -1032,9 +1263,10 @@ source_group("Network"                            FILES ${file_root_network})
 source_group("Object"                             FILES ${file_root_object})
 source_group("Observer"                           FILES ${file_root_observer})
 source_group("OsApi"                              FILES ${file_root_osapi})
-source_group("Palman"                             FILES ${file_root_palman})
 source_group("Parse"                              FILES ${file_root_parse})
 source_group("Particle"                           FILES ${file_root_particle})
+source_group("Particle\\Effects"                  FILES ${file_root_particle_effects})
+source_group("Particle\\Util"                     FILES ${file_root_particle_util})
 source_group("PcxUtils"                           FILES ${file_root_pcxutils})
 source_group("Physics"                            FILES ${file_root_physics})
 source_group("PilotFile"                          FILES ${file_root_pilotfile})
@@ -1043,14 +1275,21 @@ source_group("pngutils"                           FILES ${file_root_pngutils})
 source_group("Popup"                              FILES ${file_root_popup})
 source_group("Radar"                              FILES ${file_root_radar})
 source_group("Render"                             FILES ${file_root_render})
+source_group("Scripting"                          FILES ${file_root_scripting})
+source_group("Scripting\\Api\\Libs"               FILES ${file_root_scripting_api_libs})
+source_group("Scripting\\Api\\Objs"               FILES ${file_root_scripting_api_objs})
+source_group("Scripting\\Lua"                     FILES ${file_root_scripting_lua})
 source_group("Ship"                               FILES ${file_root_ship})
 source_group("Sound"                              FILES ${file_root_sound})
-source_group("Sound\\ogg"                         FILES ${file_root_sound_ogg})
+source_group("Sound\\FFmpeg"                      FILES ${file_root_sound_ffmpeg})
 source_group("Species_Defs"                       FILES ${file_root_species_defs})
 source_group("Starfield"                          FILES ${file_root_starfield})
 source_group("Stats"                              FILES ${file_root_stats})
 source_group("TgaUtils"                           FILES ${file_root_tgautils})
+source_group("Tracing"                            FILES ${file_root_tracing})
 source_group("Ui"                                 FILES ${file_root_ui})
+source_group("Utils"                              FILES ${file_root_utils})
+source_group("Utils\\boost"                       FILES ${file_root_utils_boost})
 source_group("Weapon"                             FILES ${file_root_weapon})
 source_group("Windows Stubs"                      FILES ${file_root_windows_stubs})
 
@@ -1068,6 +1307,8 @@ set (file_root
 	${file_root_cmeasure}
 	${file_root_controlconfig}
 	${file_root_cutscene}
+	${file_root_cutscene_ffmpeg}
+	${file_root_cutscene_player}
 	${file_root_ddsutils}
 	${file_root_debris}
 	${file_root_debugconsole}
@@ -1088,11 +1329,11 @@ set (file_root
 	${file_root_graphics_openglgr}
 	${file_root_graphics_openglgr_opengl_cpps}
 	${file_root_graphics_openglgr_opengl_headers}
-	${file_root_graphics_openglgr_gl}
 	${file_root_graphics_paths}
 	${file_root_graphics_paths_nanovg}
 	${file_root_graphics_softwaregr}
 	${file_root_graphics_softwaregr_font}
+	${file_root_headtracking}
 	${file_root_hud}
 	${file_root_iff_defs}
 	${file_root_inetfile}
@@ -1100,6 +1341,8 @@ set (file_root
 	${file_root_jpgutils}
 	${file_root_jumpnode}
 	${file_root_lab}
+	${file_root_libs}
+	${file_root_libs_ffmpeg}
 	${file_root_lighting}
 	${file_root_localization}
 	${file_root_math}
@@ -1113,9 +1356,10 @@ set (file_root
 	${file_root_object}
 	${file_root_observer}
 	${file_root_osapi}
-	${file_root_palman}
 	${file_root_parse}
 	${file_root_particle}
+	${file_root_particle_effects}
+	${file_root_particle_util}
 	${file_root_pcxutils}
 	${file_root_physics}
 	${file_root_pilotfile}
@@ -1124,14 +1368,21 @@ set (file_root
 	${file_root_popup}
 	${file_root_radar}
 	${file_root_render}
+	${file_root_scripting}
+	${file_root_scripting_api_libs}
+	${file_root_scripting_api_objs}
+	${file_root_scripting_lua}
 	${file_root_ship}
 	${file_root_sound}
-	${file_root_sound_ogg}
+	${file_root_sound_ffmpeg}
 	${file_root_species_defs}
 	${file_root_starfield}
 	${file_root_stats}
 	${file_root_tgautils}
+	${file_root_tracing}
 	${file_root_ui}
+	${file_root_utils}
+	${file_root_utils_boost}
 	${file_root_weapon}
 	${file_root_windows_stubs}
 )

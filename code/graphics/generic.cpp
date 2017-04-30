@@ -159,7 +159,7 @@ int generic_anim_stream(generic_anim *ga, const bool cache)
 	CFILE *img_cfp = NULL;
 	int anim_fps = 0;
 	char full_path[MAX_PATH];
-	int size = 0, offset = 0;
+	size_t size = 0, offset = 0;
 	const int NUM_TYPES = 3;
 	const ubyte type_list[NUM_TYPES] = {BM_TYPE_EFF, BM_TYPE_ANI, BM_TYPE_PNG};
 	const char *ext_list[NUM_TYPES] = {".eff", ".ani", ".png"};
@@ -668,7 +668,7 @@ void generic_anim_render_variable_frame_delay(generic_anim* ga, float frametime,
 		// note: generic anims are not currently ever non-streaming in FSO
 		// I'm not even sure that the existing ani/eff code would allow non-streaming generic anims
 		generic_render_png_stream(ga);
-		gr_set_bitmap(ga->bitmap_id, GR_ALPHABLEND_NONE, GR_BITBLT_MODE_NORMAL, alpha);
+		gr_set_bitmap(ga->bitmap_id, GR_ALPHABLEND_FILTER, GR_BITBLT_MODE_NORMAL, alpha);
 	}
 }
 

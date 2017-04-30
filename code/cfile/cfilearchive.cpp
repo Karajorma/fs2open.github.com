@@ -27,13 +27,14 @@
 #include "luaconf.h"
 
 #include <sstream>
+#include <limits>
 
 
 #define CHECK_POSITION
 
 // Called once to setup the low-level reading code.
 
-void cf_init_lowlevel_read_code( CFILE * cfile, int lib_offset, int size, int pos )
+void cf_init_lowlevel_read_code( CFILE * cfile, size_t lib_offset, size_t size, size_t pos )
 {
 	Assert(cfile != NULL);
 
@@ -47,13 +48,12 @@ void cf_init_lowlevel_read_code( CFILE * cfile, int lib_offset, int size, int po
 
 	if ( cb->fp )	{
 		if ( cb->lib_offset )	{
-			fseek( cb->fp, cb->lib_offset, SEEK_SET );
+			fseek( cb->fp, (long)cb->lib_offset, SEEK_SET );
 		}
 
 		#if defined(CHECK_POSITION) && !defined(NDEBUG)
-			int raw_position;
-			raw_position = ftell(cb->fp) - cb->lib_offset;
-			Assert(raw_position == cb->raw_position);
+		auto raw_position = ftell(cb->fp) - cb->lib_offset;
+		Assert(raw_position == cb->raw_position);
 		#endif
 	}
 }
@@ -84,9 +84,8 @@ int cfeof(CFILE *cfile)
 	Assert(cb->fp != NULL);
 
 	#if defined(CHECK_POSITION) && !defined(NDEBUG)
-		int raw_position;
-		raw_position = ftell(cb->fp) - cb->lib_offset;
-		Assert(raw_position == cb->raw_position);
+	auto raw_position = ftell(cb->fp) - cb->lib_offset;
+	Assert(raw_position == cb->raw_position);
 	#endif
 		
 	if (cb->raw_position >= cb->size ) {
@@ -116,12 +115,14 @@ int cftell( CFILE * cfile )
 	Assert(cb->fp != NULL);
 
 	#if defined(CHECK_POSITION) && !defined(NDEBUG)
-		int raw_position;
-		raw_position = ftell(cb->fp) - cb->lib_offset;
-		Assert(raw_position == cb->raw_position);
+	auto raw_position = ftell(cb->fp) - cb->lib_offset;
+	Assert(raw_position == cb->raw_position);
 	#endif
 
-	return cb->raw_position;
+	// The rest of the code still uses ints, do an overflow check to detect cases where this fails
+	Assertion(cb->raw_position <= static_cast<size_t>(std::numeric_limits<int>::max()),
+		"Integer overflow in cftell, a file is probably too large (but I don't know which one).");
+	return (int) cb->raw_position;
 }
 
 
@@ -143,7 +144,7 @@ int cfseek( CFILE *cfile, int offset, int where )
 	Assert( !cb->data );
 	Assert( cb->fp != NULL );
 	
-	int goal_position;
+	size_t goal_position;
 
 	switch( where )	{
 	case CF_SEEK_SET:
@@ -160,15 +161,19 @@ int cfseek( CFILE *cfile, int offset, int where )
 	default:
 		Int3();
 		return 1;
-	}	
+	}
 
-	int result = fseek(cb->fp, goal_position, SEEK_SET );
+	// Make sure we don't seek beyond the end of the file
+	CAP(goal_position, cb->lib_offset, cb->lib_offset + cb->size);
+
+	int result = fseek(cb->fp, (long)goal_position, SEEK_SET );
+	Assertion(goal_position >= cb->lib_offset, "Invalid offset values detected while seeking! Goal was " SIZE_T_ARG ", lib_offset is " SIZE_T_ARG ".", goal_position, cb->lib_offset);
 	cb->raw_position = goal_position - cb->lib_offset;
+	Assertion(cb->raw_position <= cb->size, "Invalid raw_position value detected!");
 
 	#if defined(CHECK_POSITION) && !defined(NDEBUG)
-		int tmp_offset;
-		tmp_offset = (int)ftell(cb->fp) - cb->lib_offset;
-		Assert(tmp_offset==cb->raw_position);
+	auto tmp_offset = ftell(cb->fp) - cb->lib_offset;
+	Assert(tmp_offset==cb->raw_position);
 	#endif
 
 	return result;	
@@ -185,7 +190,7 @@ int cfread(void *buf, int elsize, int nelem, CFILE *cfile)
 	if(!cf_is_valid(cfile))
 		return 0;
 
-	int size = elsize*nelem;
+	size_t size = elsize*nelem;
 
 	if(buf == NULL || size <= 0)
 		return 0;
@@ -200,6 +205,7 @@ int cfread(void *buf, int elsize, int nelem, CFILE *cfile)
 	}
 
 	if ( (cb->raw_position+size) > cb->size ) {
+		Assertion(cb->raw_position <= cb->size, "Invalid raw_position value detected!");
 		size = cb->size - cb->raw_position;
 		if ( size < 1 ) {
 			return 0;
@@ -208,7 +214,7 @@ int cfread(void *buf, int elsize, int nelem, CFILE *cfile)
 	}
 
 	if (cb->max_read_len) {
-		if ( (size_t)(cb->raw_position+size) > cb->max_read_len ) {
+		if ( cb->raw_position+size > cb->max_read_len ) {
 			std::ostringstream s_buf;
 			s_buf << "Attempted to read " << size << "-byte(s) beyond length limit";
 
@@ -216,18 +222,18 @@ int cfread(void *buf, int elsize, int nelem, CFILE *cfile)
 		}
 	}
 
-	int bytes_read = fread( buf, 1, size, cb->fp );
+	size_t bytes_read = fread( buf, 1, size, cb->fp );
 	if ( bytes_read > 0 )	{
 		cb->raw_position += bytes_read;
+		Assertion(cb->raw_position <= cb->size, "Invalid raw_position value detected!");
 	}		
 
 	#if defined(CHECK_POSITION) && !defined(NDEBUG)
-		int tmp_offset;
-		tmp_offset = ftell(cb->fp) - cb->lib_offset;
-		Assert(tmp_offset==cb->raw_position);
+	auto tmp_offset = ftell(cb->fp) - cb->lib_offset;
+	Assert(tmp_offset==cb->raw_position);
 	#endif
 
-	return bytes_read / elsize;
+	return (int)(bytes_read / elsize);
 
 }
 
@@ -250,12 +256,12 @@ int cfread_lua_number(double *buf, CFILE *cfile)
 
 	long orig_pos = ftell(cb->fp);
 	int items_read = fscanf(cb->fp, LUA_NUMBER_SCAN, buf);
-	cb->raw_position += ftell(cb->fp)-orig_pos;		
+	cb->raw_position += ftell(cb->fp)-orig_pos;
+	Assertion(cb->raw_position <= cb->size, "Invalid raw_position value detected!");
 
 	#if defined(CHECK_POSITION) && !defined(NDEBUG)
-		int tmp_offset;
-		tmp_offset = ftell(cb->fp) - cb->lib_offset;
-		Assert(tmp_offset==cb->raw_position);
+	auto tmp_offset = ftell(cb->fp) - cb->lib_offset;
+	Assert(tmp_offset==cb->raw_position);
 	#endif
 
 	return items_read;

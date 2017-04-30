@@ -32,7 +32,7 @@
 
 #define NUM_CMD_SETTINGS	2
 
-char *Cmd_brief_fname[NUM_CMD_SETTINGS][GR_NUM_RESOLUTIONS] =
+const char *Cmd_brief_fname[NUM_CMD_SETTINGS][GR_NUM_RESOLUTIONS] =
 {
 	{
 		"CommandBrief",
@@ -45,7 +45,7 @@ char *Cmd_brief_fname[NUM_CMD_SETTINGS][GR_NUM_RESOLUTIONS] =
 };
 
 
-char *Cmd_brief_mask[NUM_CMD_SETTINGS][GR_NUM_RESOLUTIONS] =
+const char *Cmd_brief_mask[NUM_CMD_SETTINGS][GR_NUM_RESOLUTIONS] =
 {
 	{
 		"CommandBrief-m",
@@ -175,7 +175,7 @@ static int Voice_good_to_go = 0;
 static int Voice_started_time = 0;
 static int Voice_ended_time;
 static generic_anim Cur_Anim;
-static char *Cur_anim_filename = "~~~~";
+static const char *Cur_anim_filename = "~~~~";
 
 static int Cmd_brief_last_voice;
 static int Cmd_brief_last_stage;
@@ -349,6 +349,9 @@ void cmd_brief_new_stage(int stage)
 		cmd_brief_stop_anim();
 		Cur_stage = -1;
 	}
+
+	// Make sure that the text wrapping and the rendering code use the same font
+	font::set_font(font::FONT1);
 
 	Cur_stage = stage;
 	brief_color_text_init(Cur_cmd_brief->stage[stage].text.c_str(), Cmd_text_wnd_coords[Uses_scroll_buttons][gr_screen.res][CMD_W_COORD], default_command_briefing_color);
@@ -530,7 +533,7 @@ void cmd_brief_button_pressed(int n)
 
 void cmd_brief_ani_wave_init(int index)
 {
-	char *name;
+	const char *name;
 
 	// this is the first instance of the given anim filename
 	name = Cur_cmd_brief->stage[index].ani_filename;
@@ -738,7 +741,7 @@ void cmd_brief_do_frame(float frametime)
 		int more_txt_x = Cmd_text_wnd_coords[Uses_scroll_buttons][gr_screen.res][CMD_X_COORD] + (Cmd_text_wnd_coords[Uses_scroll_buttons][gr_screen.res][CMD_W_COORD]/2) - 10;
 		int more_txt_y = Cmd_text_wnd_coords[Uses_scroll_buttons][gr_screen.res][CMD_Y_COORD] + Cmd_text_wnd_coords[Uses_scroll_buttons][gr_screen.res][CMD_H_COORD] - 2;				// located below brief text, centered
 
-		gr_get_string_size(&w, &h, XSTR("more", 1469), strlen(XSTR("more", 1469)));
+		gr_get_string_size(&w, &h, XSTR("more", 1469), static_cast<int>(strlen(XSTR("more", 1469))));
 		gr_set_color_fast(&Color_black);
 		gr_rect(more_txt_x-2, more_txt_y, w+3, h, GR_RESIZE_MENU);
 		gr_set_color_fast(&Color_more_indicator);

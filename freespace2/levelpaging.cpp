@@ -12,11 +12,12 @@
 #include "freespace.h"
 #include "levelpaging.h"
 
+#include "tracing/tracing.h"
+
 
 // All the page in functions
 extern void ship_page_in();
 extern void debris_page_in();
-extern void particle_page_in();
 extern void stars_page_in();
 extern void hud_page_in();
 extern void weapons_page_in();
@@ -30,10 +31,17 @@ extern void message_pagein_mission_messages();
 extern void model_page_in_stop();
 extern void mflash_page_in(bool);
 
+namespace particle
+{
+	extern void page_in();
+}
+
 // Pages in all the texutures for the currently
 // loaded mission.  Call game_busy() occasionally...
 void level_page_in()
 {
+	TRACE_SCOPE(tracing::LevelPageIn);
+
 	// Most important ones first
 	game_busy( NOX("*** paging in ships ***") );
 	ship_page_in();
@@ -42,7 +50,7 @@ void level_page_in()
 	weapons_page_in();
 	game_busy( NOX("*** paging in various effects ***") );
 	fireballs_page_in();
-	particle_page_in();
+	particle::page_in();
 	debris_page_in();
 	hud_page_in();
 	stars_page_in();

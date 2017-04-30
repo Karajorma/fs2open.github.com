@@ -17,7 +17,7 @@
 #include "globalincs/version.h"
 #include "hud/hudconfig.h"
 #include "network/multi.h"
-#include "parse/scripting.h"
+#include "scripting/scripting.h"
 #include "parse/sexp.h"
 #include "globalincs/version.h"
 #include "globalincs/pstypes.h"
@@ -150,6 +150,7 @@ Flag exe_params[] =
 	{ "-noscalevid",		"Disable scale-to-window for movies",		true,	0,					EASY_DEFAULT,		"Graphics",		"http://www.hard-light.net/wiki/index.php/Command-Line_Reference#-noscalevid", },
 	{ "-missile_lighting",	"Apply lighting to missiles"	,			true,	EASY_ALL_ON,		EASY_DEFAULT,		"Graphics",		"http://www.hard-light.net/wiki/index.php/Command-Line_Reference#-missile_lighting", },
 	{ "-nonormal",			"Disable normal maps",						true,	EASY_DEFAULT_MEM,	EASY_MEM_ALL_ON,	"Graphics",		"http://www.hard-light.net/wiki/index.php/Command-Line_Reference#-normal" },
+	{ "-no_emissive_light",	"Disable emissive light from ships",		true,	0,					EASY_DEFAULT,		"Graphics",		"http://www.hard-light.net/wiki/index.php/Command-Line_Reference#-no_emissive_light" },
 	{ "-noheight",			"Disable height/parallax maps",				true,	EASY_DEFAULT_MEM,	EASY_MEM_ALL_ON,	"Graphics",		"http://www.hard-light.net/wiki/index.php/Command-Line_Reference#-height" },
 	{ "-3dshockwave",		"Enable 3D shockwaves",						true,	EASY_MEM_ALL_ON,	EASY_DEFAULT_MEM,	"Graphics",		"http://www.hard-light.net/wiki/index.php/Command-Line_Reference#-3dshockwave" },
 	{ "-post_process",		"Enable post processing",					true,	EASY_ALL_ON,		EASY_DEFAULT,		"Graphics",		"http://www.hard-light.net/wiki/index.php/Command-Line_Reference#-post_process" },
@@ -195,11 +196,9 @@ Flag exe_params[] =
 	{ "-nomovies",			"Disable video playback",					true,	0,					EASY_DEFAULT,		"Troubleshoot",	"http://www.hard-light.net/wiki/index.php/Command-Line_Reference#-nomovies", },
 	{ "-noparseerrors",		"Disable parsing errors",					true,	0,					EASY_DEFAULT,		"Troubleshoot",	"http://www.hard-light.net/wiki/index.php/Command-Line_Reference#-noparseerrors", },
 	{ "-query_speech",		"Check if this build has speech",			true,	0,					EASY_DEFAULT,		"Troubleshoot",	"http://www.hard-light.net/wiki/index.php/Command-Line_Reference#-query_speech", },
-	{ "-novbo",				"Disable OpenGL VBO",						true,	0,					EASY_DEFAULT,		"Troubleshoot",	"http://www.hard-light.net/wiki/index.php/Command-Line_Reference#-novbo", },
 	{ "-loadallweps",		"Load all weapons, even those not used",	true,	0,					EASY_DEFAULT,		"Troubleshoot",	"http://www.hard-light.net/wiki/index.php/Command-Line_Reference#-loadallweps", },
 	{ "-disable_fbo",		"Disable OpenGL RenderTargets",				true,	0,					EASY_DEFAULT,		"Troubleshoot",	"http://www.hard-light.net/wiki/index.php/Command-Line_Reference#-disable_fbo", },
 	{ "-disable_pbo",		"Disable OpenGL Pixel Buffer Objects",		true,	0,					EASY_DEFAULT,		"Troubleshoot",	"http://www.hard-light.net/wiki/index.php/Command-Line_Reference#-disable_pbo", },
-	{ "-no_glsl",			"Disable GLSL (shader) support",			true,	0,					EASY_DEFAULT,		"Troubleshoot",	"http://www.hard-light.net/wiki/index.php/Command-Line_Reference#-no_glsl", },
 	{ "-ati_swap",			"Fix colour issues on some ATI cards",		true,	0,					EASY_DEFAULT,		"Troubleshoot",	"http://www.hard-light.net/wiki/index.php/Command-Line_Reference#-ati_swap", },
 	{ "-no_3d_sound",		"Use only 2D/stereo for sound effects",		true,	0,					EASY_DEFAULT,		"Troubleshoot",	"http://www.hard-light.net/wiki/index.php/Command-Line_Reference#-no_3d_sound", },
 	{ "-mipmap",			"Enable mipmapping",						true,	0,					EASY_DEFAULT_MEM,	"Troubleshoot",	"http://www.hard-light.net/wiki/index.php/Command-Line_Reference#-mipmap", },
@@ -209,6 +208,8 @@ Flag exe_params[] =
 	{ "-no_batching",		"Disable batched model rendering",			true,	0,					EASY_DEFAULT,		"Troubleshoot", "", },
 	{ "-no_geo_effects",	"Disable geometry shader for effects",		true,	0,					EASY_DEFAULT,		"Troubleshoot", "", },
 	{ "-set_cpu_affinity",	"Sets processor affinity to config value",	true,	0,					EASY_DEFAULT,		"Troubleshoot", "", },
+	{ "-nograb",			"Disables mouse grabbing",					true,	0,					EASY_DEFAULT,		"Troubleshoot", "http://www.hard-light.net/wiki/index.php/Command-Line_Reference#-nograb", },
+	{ "-noshadercache",		"Disables the shader cache",				true,	0,					EASY_DEFAULT,		"Troubleshoot", "http://www.hard-light.net/wiki/index.php/Command-Line_Reference#-noshadercache", },
 #ifdef WIN32
 	{ "-fix_registry",	"Use a different registry path",			true,		0,					EASY_DEFAULT,		"Troubleshoot", "", },
 #endif
@@ -231,13 +232,16 @@ Flag exe_params[] =
 	{ "-output_sexps",		"Output SEXPs to sexps.html",				true,	0,					EASY_DEFAULT,		"Dev Tool",		"http://www.hard-light.net/wiki/index.php/Command-Line_Reference#-output_sexps", },
 	{ "-output_scripting",	"Output scripting to scripting.html",		true,	0,					EASY_DEFAULT,		"Dev Tool",		"http://www.hard-light.net/wiki/index.php/Command-Line_Reference#-output_scripting", },
 	{ "-save_render_target",	"Save render targets to file",			true,	0,					EASY_DEFAULT,		"Dev Tool",		"http://www.hard-light.net/wiki/index.php/Command-Line_Reference#-save_render_target", },
-	{ "-debug_window",		"Display debug window",						true,	0,					EASY_DEFAULT,		"Dev Tool",		"http://www.hard-light.net/wiki/index.php/Command-Line_Reference#-debug_window", },
 	{ "-verify_vps",		"Spew VP CRCs to vp_crcs.txt",				true,	0,					EASY_DEFAULT,		"Dev Tool",		"http://www.hard-light.net/wiki/index.php/Command-Line_Reference#-verify_vps", },
 	{ "-reparse_mainhall",	"Reparse mainhall.tbl when loading halls",	false,	0,					EASY_DEFAULT,		"Dev Tool",		"http://www.hard-light.net/wiki/index.php/Command-Line_Reference#-reparse_mainhall", },
-	{ "-profile_frame_time","Profile engine subsystems",				true,	0,					EASY_DEFAULT,		"Dev Tool",		"http://www.hard-light.net/wiki/index.php/Command-Line_Reference#-profile_frame_timings", },
 	{ "-profile_write_file", "Write profiling information to file",		true,	0,					EASY_DEFAULT,		"Dev Tool",		"http://www.hard-light.net/wiki/index.php/Command-Line_Reference#-profile_write_file", },
 	{ "-no_unfocused_pause","Don't pause if the window isn't focused",	true,	0,					EASY_DEFAULT,		"Dev Tool",		"http://www.hard-light.net/wiki/index.php/Command-Line_Reference#-no_unfocused_pause", },
 	{ "-benchmark_mode",	"Puts the game into benchmark mode",		true,	0,					EASY_DEFAULT,		"Dev Tool",		"http://www.hard-light.net/wiki/index.php/Command-Line_Reference#-benchmark_mode", },
+	{ "-noninteractive",	"Disables interactive dialogs",				true,	0,					EASY_DEFAULT,		"Dev Tool",		"http://www.hard-light.net/wiki/index.php/Command-Line_Reference#-noninteractive", },
+	{ "-json_pilot",		"Dump pilot files in JSON format",			true,	0,					EASY_DEFAULT,		"Dev Tool",		"http://www.hard-light.net/wiki/index.php/Command-Line_Reference#-json_pilot", },
+	{ "-json_profiling",	"Generate JSON profiling output",			true,	0,					EASY_DEFAULT,		"Dev Tool",		"http://www.hard-light.net/wiki/index.php/Command-Line_Reference#-json_profiling", },
+	{ "-profile_frame_time","Profile engine subsystems",				true,	0,					EASY_DEFAULT,		"Dev Tool",		"http://www.hard-light.net/wiki/index.php/Command-Line_Reference#-profile_frame_timings", },
+	{ "-debug_window",		"Enable the debug window",					true,	0,					EASY_DEFAULT,		"Dev Tool",		"http://www.hard-light.net/wiki/index.php/Command-Line_Reference#-debug_window", },
 };
 
 // forward declaration
@@ -426,10 +430,8 @@ bool Cmdline_portable_mode = false;
 cmdline_parm loadallweapons_arg("-loadallweps", NULL, AT_NONE);	// Cmdline_load_all_weapons
 cmdline_parm nomovies_arg("-nomovies", NULL, AT_NONE);		// Cmdline_nomovies  -- Allows video streaming
 cmdline_parm no_set_gamma_arg("-no_set_gamma", NULL, AT_NONE);	// Cmdline_no_set_gamma
-cmdline_parm no_vbo_arg("-novbo", NULL, AT_NONE);			// Cmdline_novbo
 cmdline_parm no_fbo_arg("-disable_fbo", NULL, AT_NONE);		// Cmdline_no_fbo
 cmdline_parm no_pbo_arg("-disable_pbo", NULL, AT_NONE);		// Cmdline_no_pbo
-cmdline_parm noglsl_arg("-no_glsl", NULL, AT_NONE);			// Cmdline_noglsl  -- disable GLSL support in OpenGL
 cmdline_parm mipmap_arg("-mipmap", NULL, AT_NONE);			// Cmdline_mipmap
 cmdline_parm atiswap_arg("-ati_swap", NULL, AT_NONE);        // Cmdline_atiswap - Fix ATI color swap issue for screenshots.
 cmdline_parm no3dsound_arg("-no_3d_sound", NULL, AT_NONE);		// Cmdline_no_3d_sound - Disable use of full 3D sounds
@@ -439,6 +441,8 @@ cmdline_parm old_collision_system("-old_collision", NULL, AT_NONE); // Cmdline_o
 cmdline_parm gl_finish ("-gl_finish", NULL, AT_NONE);
 cmdline_parm no_geo_sdr_effects("-no_geo_effects", NULL, AT_NONE);
 cmdline_parm set_cpu_affinity("-set_cpu_affinity", NULL, AT_NONE);
+cmdline_parm nograb_arg("-nograb", NULL, AT_NONE);
+cmdline_parm noshadercache_arg("-noshadercache", NULL, AT_NONE);
 #ifdef WIN32
 cmdline_parm fix_registry("-fix_registry", NULL, AT_NONE);
 #endif
@@ -446,10 +450,8 @@ cmdline_parm fix_registry("-fix_registry", NULL, AT_NONE);
 int Cmdline_load_all_weapons = 0;
 int Cmdline_nomovies = 0;
 int Cmdline_no_set_gamma = 0;
-int Cmdline_novbo = 0; // turn off OGL VBO support, troubleshooting
 int Cmdline_no_fbo = 0;
 int Cmdline_no_pbo = 0;
-int Cmdline_noglsl = 0;
 int Cmdline_ati_color_swap = 0;
 int Cmdline_no_3d_sound = 0;
 int Cmdline_drawelements = 0;
@@ -457,6 +459,8 @@ char* Cmdline_keyboard_layout = NULL;
 bool Cmdline_gl_finish = false;
 bool Cmdline_no_geo_sdr_effects = false;
 bool Cmdline_set_cpu_affinity = false;
+bool Cmdline_nograb = false;
+bool Cmdline_noshadercache = false;
 #ifdef WIN32
 bool Cmdline_alternate_registry_path = false;
 #endif
@@ -466,12 +470,8 @@ cmdline_parm start_mission_arg("-start_mission", "Skip mainhall and run this mis
 cmdline_parm dis_collisions("-dis_collisions", NULL, AT_NONE);	// Cmdline_dis_collisions
 cmdline_parm dis_weapons("-dis_weapons", NULL, AT_NONE);		// Cmdline_dis_weapons
 cmdline_parm noparseerrors_arg("-noparseerrors", NULL, AT_NONE);	// Cmdline_noparseerrors  -- turns off parsing errors -C
-#ifdef Allow_NoWarn
-cmdline_parm nowarn_arg("-no_warn", "Disable warnings (not recommended)", AT_NONE);			// Cmdline_nowarn
-#endif
 cmdline_parm extra_warn_arg("-extra_warn", "Enable 'extra' warnings", AT_NONE);	// Cmdline_extra_warn
 cmdline_parm fps_arg("-fps", NULL, AT_NONE);					// Cmdline_show_fps
-cmdline_parm show_mem_usage_arg("-show_mem_usage", NULL, AT_NONE);	// Cmdline_show_mem_usage
 cmdline_parm pos_arg("-pos", NULL, AT_NONE);					// Cmdline_show_pos
 cmdline_parm stats_arg("-stats", NULL, AT_NONE);				// Cmdline_show_stats
 cmdline_parm save_render_targets_arg("-save_render_target", NULL, AT_NONE);	// Cmdline_save_render_targets
@@ -482,10 +482,15 @@ cmdline_parm center_res_arg("-center_res", "Resolution of center monitor, format
 cmdline_parm verify_vps_arg("-verify_vps", NULL, AT_NONE);	// Cmdline_verify_vps  -- spew VP crcs to vp_crcs.txt
 cmdline_parm parse_cmdline_only(PARSE_COMMAND_LINE_STRING, "Ignore any cmdline_fso.cfg files", AT_NONE);
 cmdline_parm reparse_mainhall_arg("-reparse_mainhall", NULL, AT_NONE); //Cmdline_reparse_mainhall
-cmdline_parm frame_profile_arg("-profile_frame_time", NULL, AT_NONE); //Cmdline_frame_profile
 cmdline_parm frame_profile_write_file("-profile_write_file", NULL, AT_NONE); // Cmdline_profile_write_file
 cmdline_parm no_unfocused_pause_arg("-no_unfocused_pause", NULL, AT_NONE); //Cmdline_no_unfocus_pause
 cmdline_parm benchmark_mode_arg("-benchmark_mode", NULL, AT_NONE); //Cmdline_benchmark_mode
+cmdline_parm noninteractive_arg("-noninteractive", NULL, AT_NONE); //Cmdline_noninteractive
+cmdline_parm json_pilot("-json_pilot", NULL, AT_NONE); //Cmdline_json_pilot
+cmdline_parm json_profiling("-json_profiling", NULL, AT_NONE); //Cmdline_json_profiling
+cmdline_parm show_video_info("-show_video_info", NULL, AT_NONE); //Cmdline_show_video_info
+cmdline_parm frame_profile_arg("-profile_frame_time", NULL, AT_NONE); //Cmdline_frame_profile
+cmdline_parm debug_window_arg("-debug_window", NULL, AT_NONE);	// Cmdline_debug_window
 
 
 char *Cmdline_start_mission = NULL;
@@ -497,7 +502,6 @@ int Cmdline_noparseerrors = 0;
 int Cmdline_nowarn = 0; // turn warnings off in FRED
 #endif
 int Cmdline_extra_warn = 0;
-int Cmdline_show_mem_usage = 0;
 int Cmdline_show_pos = 0;
 int Cmdline_show_stats = 0;
 int Cmdline_save_render_targets = 0;
@@ -507,10 +511,15 @@ char *Cmdline_res = 0;
 char *Cmdline_center_res = 0;
 int Cmdline_verify_vps = 0;
 int Cmdline_reparse_mainhall = 0;
-bool Cmdline_frame_profile = false;
 bool Cmdline_profile_write_file = false;
 bool Cmdline_no_unfocus_pause = false;
 bool Cmdline_benchmark_mode = false;
+bool Cmdline_noninteractive = false;
+bool Cmdline_json_pilot = false;
+bool Cmdline_json_profiling = false;
+bool Cmdline_frame_profile = false;
+bool Cmdline_show_video_info = false;
+bool Cmdline_debug_window = false;
 
 // Other
 cmdline_parm get_flags_arg("-get_flags", "Output the launcher flags file", AT_NONE);
@@ -613,17 +622,20 @@ int is_extra_space(char ch)
 // eliminates all leading and trailing extra chars from a string.  Returns pointer passed in.
 char *drop_extra_chars(char *str)
 {
-	int s, e;
+	size_t s;
+	size_t e;
 
 	s = 0;
 	while (str[s] && is_extra_space(str[s]))
 		s++;
 
-	e = strlen(str) - 1;	// we already account for NULL later on, so the -1 is here to make
-							// sure we do our math without taking it into consideration
+	e = strlen(str);
 
-	if (e < 0)
-		e = 0;
+	if (e > 0) {
+		// we already account for NULL later on, so the -1 is here to make
+		// sure we do our math without taking it into consideration
+		e -= 1;
+	}
 
 	while (e > s) {
 		if (!is_extra_space(str[e])){
@@ -678,8 +690,8 @@ bool parm_stuff_args(cmdline_parm *parm, int argc, char *argv[], int index)
 				parm->args = NULL;
 			}
 
-			int argsize = strlen(argv[index + 1]);
-			int buffersize = argsize;
+			size_t argsize = strlen(argv[index + 1]);
+			size_t buffersize = argsize;
 
 			if (saved_args != NULL)
 			{
@@ -777,12 +789,7 @@ void os_validate_parms(int argc, char *argv[])
 			if (parm_found == 0) {
 				// if we got a -help, --help, -h, or -? then show the help text, otherwise show unknown option
 				if (!stricmp(token, "-help") || !stricmp(token, "--help") || !stricmp(token, "-h") || !stricmp(token, "-?")) {
-					if (FS_VERSION_HAS_REVIS == 0) {
-						printf("FreeSpace 2 Open, version %i.%i.%i\n", FS_VERSION_MAJOR, FS_VERSION_MINOR, FS_VERSION_BUILD);
-					}
-					else {
-						printf("FreeSpace 2 Open, version %i.%i.%i.%i\n", FS_VERSION_MAJOR, FS_VERSION_MINOR, FS_VERSION_BUILD, FS_VERSION_REVIS);
-					}
+					printf("FreeSpace 2 Open, version %s\n", FS_VERSION_FULL);
 					printf("Website: http://scp.indiegames.us\n");
 					printf("Mantis (bug reporting): http://scp.indiegames.us/mantis/\n\n");
 					printf("Usage: fs2_open [options]\n");
@@ -790,16 +797,17 @@ void os_validate_parms(int argc, char *argv[])
 					// not the prettiest thing but the job gets done
 					static const int STR_SIZE = 25;  // max len of exe_params.name + 5 spaces
 					const int AT_SIZE = 8;  // max len of cmdline_arg_types[] + 2 spaces
-					int sp=0, atp=0;
+					size_t atp = 0;
+					size_t sp = 0;
 					for (parmp = GET_FIRST(&Parm_list); parmp !=END_OF_LIST(&Parm_list); parmp = GET_NEXT(parmp) ) {
 						// don't output deprecated flags
 						if (stricmp("deprecated", parmp->help)) {
 							sp = strlen(parmp->name);
 							if (parmp->arg_type != AT_NONE) {
 								atp = strlen(cmdline_arg_types[parmp->arg_type]);
-								printf("    [ %s ]%*s[ %s ]%*s- %s\n", parmp->name, (STR_SIZE - sp -1), NOX(" "), cmdline_arg_types[parmp->arg_type], AT_SIZE-atp, NOX(" "), parmp->help);
+								printf("    [ %s ]%*s[ %s ]%*s- %s\n", parmp->name, (int)(STR_SIZE - sp -1), NOX(" "), cmdline_arg_types[parmp->arg_type], (int)(AT_SIZE-atp), NOX(" "), parmp->help);
 							} else {
-								printf("    [ %s ]%*s- %s\n", parmp->name, (STR_SIZE - sp -1 +AT_SIZE+4), NOX(" "), parmp->help);
+								printf("    [ %s ]%*s- %s\n", parmp->name, (int)(STR_SIZE - sp -1 +AT_SIZE+4), NOX(" "), parmp->help);
 							}
 						}
 					}
@@ -820,14 +828,14 @@ void os_validate_parms(int argc, char *argv[])
 
 int parse_cmdline_string(char* cmdline, char** argv)
 {
-	int length = strlen(cmdline);
+	size_t length = strlen(cmdline);
 
 	bool start_found = false;
 	bool quoted = false;
 
-	int argc = 0;
+	size_t argc = 0;
 	char* current_argv = NULL;
-	for (int i = 0; i < length; i++)
+	for (size_t i = 0; i < length; i++)
 	{
 		if (!start_found && !isspace(cmdline[i]))
 		{
@@ -888,7 +896,7 @@ int parse_cmdline_string(char* cmdline, char** argv)
 		argc++;
 	}
 
-	return argc;
+	return (int)argc;
 }
 
 void os_process_cmdline(char* cmdline)
@@ -918,37 +926,50 @@ bool has_cmdline_only_flag(int argc, char *argv[])
 	return false;
 }
 
+// remove old parms - needed for tests
+static void reset_cmdline_parms()
+{
+	for (cmdline_parm *parmp = GET_FIRST(&Parm_list); parmp != END_OF_LIST(&Parm_list); parmp = GET_NEXT(parmp)) {
+		if (parmp->args != NULL) {
+			delete[] parmp->args;
+			parmp->args = NULL;
+		}
+		parmp->name_found = 0;
+	}
+}
+
 // Call once to initialize the command line system
 //
 // cmdline - command line string passed to the application
 void os_init_cmdline(int argc, char *argv[])
 {
+	// Tests call this multiple times, so reset the params here.
+	// Otherwise e.g. the modlist just grows and grows...
+	reset_cmdline_parms();
+
 	FILE *fp;
-	
+
 	if (!has_cmdline_only_flag(argc, argv)) {
 		// Only parse the config file in the current directory if we are in legacy config mode
 		if (os_is_legacy_mode()) {
 			// read the cmdline_fso.cfg file from the data folder, and pass the command line arguments to
 			// the the parse_parms and validate_parms line.  Read these first so anything actually on
 			// the command line will take precedence
-#ifdef _WIN32
-			fp = fopen("data\\cmdline_fso.cfg", "rt");
-#elif defined(APPLE_APP)
+#ifdef APPLE_APP
 			char resolved_path[MAX_PATH], data_path[MAX_PATH_LEN];
 
-			GetCurrentDirectory(MAX_PATH_LEN - 1, data_path);
+			getcwd(data_path, sizeof(data_path));
 			snprintf(resolved_path, MAX_PATH, "%s/data/cmdline_fso.cfg", data_path);
 
 			fp = fopen(resolved_path, "rt");
 #else
-			fp = fopen("data/cmdline_fso.cfg", "rt");
+			fp = fopen("data" DIR_SEPARATOR_STR "cmdline_fso.cfg", "rt");
 #endif
-
 			// if the file exists, get a single line, and deal with it
 			if (fp) {
 				char *buf, *p;
 
-				size_t len = filelength(fileno(fp)) + 2;
+				auto len = static_cast<int>(filelength(fileno(fp))) + 2;
 				buf = new char[len];
 
 				if (fgets(buf, len - 1, fp) != nullptr)
@@ -957,7 +978,6 @@ void os_init_cmdline(int argc, char *argv[])
 					if ((p = strrchr(buf, '\n')) != NULL) {
 						*p = '\0';
 					}
-
 #ifdef SCP_UNIX
 					// append a space for the os_parse_parms() check
 					strcat_s(buf, len, " ");
@@ -976,7 +996,7 @@ void os_init_cmdline(int argc, char *argv[])
 		if ( fp ) {
 			char *buf, *p;
 
-			size_t len = filelength( fileno(fp) ) + 2;
+			auto len = static_cast<int>(filelength( fileno(fp) )) + 2;
 			buf = new char [len];
 
 			if (fgets(buf, len-1, fp) != nullptr)
@@ -988,14 +1008,14 @@ void os_init_cmdline(int argc, char *argv[])
 
 				// append a space for the os_parse_parms() check
 				strcat_s(buf, len, " ");
-			
+
 				os_process_cmdline(buf);
 			}
 			delete [] buf;
 			fclose(fp);
 		}
 	} // If cmdline included PARSE_COMMAND_LINE_STRING
-    
+
 	// By parsing cmdline last, anything actually on the command line will take precedence.
 	os_parse_parms(argc, argv);
 	os_validate_parms(argc, argv);
@@ -1071,7 +1091,7 @@ int cmdline_parm::get_int()
 	Assertion(arg_type == AT_INT, "Coding error! Cmdline arg (%s) called cmdline_parm::get_int() with invalid arg_type (%s)", name, cmdline_arg_types[arg_type]);
 	check_if_args_is_valid();
 
-	int offset = 0;
+	size_t offset = 0;
 
 	if (stacks) {
 		// first off, DON'T STACK NON-STRINGS!!
@@ -1096,7 +1116,7 @@ float cmdline_parm::get_float()
 	Assertion(arg_type == AT_FLOAT, "Coding error! Cmdline arg (%s) called cmdline_parm::get_float() with invalid arg_type (%s)", name, cmdline_arg_types[arg_type]);
 	check_if_args_is_valid();
 
-	int offset = 0;
+	size_t offset = 0;
 
 	if (stacks) {
 		// first off, DON'T STACK NON-STRINGS!!
@@ -1183,14 +1203,15 @@ static SCP_vector<SCP_string> unix_get_dir_names(SCP_string parent, SCP_string d
 }
 
 // For case sensitive filesystems (e.g. Linux/BSD) perform case-insensitive dir matches.
-static void handle_unix_modlist(char **modlist, int *len)
+static void handle_unix_modlist(char **modlist, size_t *len)
 {
 	// search filesystem for given paths
 	SCP_vector<SCP_string> mod_paths;
 	for (char *cur_mod = strtok(*modlist, ","); cur_mod != NULL; cur_mod = strtok(NULL, ","))
 	{
 		SCP_vector<SCP_string> this_mod_paths = unix_get_dir_names(".", cur_mod);
-		if (this_mod_paths.empty()) {
+		// Ignore non-existing mods for unit tests
+		if (!running_unittests && this_mod_paths.empty()) {
 			ReleaseWarning(LOCATION, "Can't find mod '%s'. Ignoring.", cur_mod);
 		}
 		mod_paths.insert(mod_paths.end(), this_mod_paths.begin(), this_mod_paths.end());
@@ -1493,7 +1514,7 @@ bool SetCmdlineParams()
 		}
 
 		// Ok - mod stacking support
-		int len = strlen(Cmdline_mod);
+		size_t len = strlen(Cmdline_mod);
 		char *modlist = new char[len+2];
 		memset( modlist, 0, len + 2 );
 		strcpy_s(modlist, len+2, Cmdline_mod);
@@ -1504,7 +1525,7 @@ bool SetCmdlineParams()
 #endif
 
 		// null terminate each individual
-		for (int i = 0; i < len; i++)
+		for (size_t i = 0; i < len; i++)
 		{
 			if (modlist[i] == ',')
 				modlist[i] = '\0';
@@ -1609,11 +1630,7 @@ bool SetCmdlineParams()
 	if ( height_arg.found() ) {
 		Cmdline_height = 0;
 	}
-
-	if ( noglsl_arg.found() ) {
-		Cmdline_noglsl = 1;
-	}
-
+	
 	if (fxaa_arg.found() ) {
 		Cmdline_fxaa = true;
 
@@ -1636,9 +1653,6 @@ bool SetCmdlineParams()
 	if ( weapon_choice_3d_arg.found() )
 		Cmdline_weapon_choice_3d = 1;
 
-	if ( show_mem_usage_arg.found() )
-		Cmdline_show_mem_usage = 1;
-
 	if (ingamejoin_arg.found() )
 		Cmdline_ingamejoin = 1;
 
@@ -1654,11 +1668,6 @@ bool SetCmdlineParams()
 
 	if (output_sexp_arg.found() ) {
 		output_sexps("sexps.html");
-	}
-
-	if ( no_vbo_arg.found() )
-	{
-		Cmdline_novbo = 1;
 	}
 
 	if ( no_pbo_arg.found() )
@@ -1689,6 +1698,16 @@ bool SetCmdlineParams()
 	if (set_cpu_affinity.found())
 	{
 		Cmdline_set_cpu_affinity = true;
+	}
+
+	if (nograb_arg.found())
+	{
+		Cmdline_nograb = true;
+	}
+
+	if (noshadercache_arg.found())
+	{
+		Cmdline_noshadercache = true;
 	}
 
 	if (portable_mode.found())
@@ -1810,10 +1829,11 @@ bool SetCmdlineParams()
 	if( enable_shadows_arg.found() )
 	{
 		Cmdline_shadow_quality = 2;
-		if( shadow_quality_arg.found() )
-		{
-			Cmdline_shadow_quality = shadow_quality_arg.get_int();
-		}
+	}
+
+	if( shadow_quality_arg.found() )
+	{
+		Cmdline_shadow_quality = shadow_quality_arg.get_int();
 	}
 
 	if( no_deferred_lighting_arg.found() )
@@ -1821,14 +1841,8 @@ bool SetCmdlineParams()
 		Cmdline_no_deferred_lighting = 1;
 	}
 
-	if (frame_profile_arg.found() )
-	{
-		Cmdline_frame_profile = true;
-	}
-
 	if (frame_profile_write_file.found())
 	{
-		Cmdline_frame_profile = true;
 		Cmdline_profile_write_file = true;
 	}
 
@@ -1840,6 +1854,35 @@ bool SetCmdlineParams()
 	if (benchmark_mode_arg.found())
 	{
 		Cmdline_benchmark_mode = true;
+	}
+
+	if (noninteractive_arg.found())
+	{
+		Cmdline_noninteractive = true;
+	}
+
+	if (json_pilot.found())
+	{
+		Cmdline_json_pilot = true;
+	}
+
+	if (json_profiling.found())
+	{
+		Cmdline_json_profiling = true;
+	}
+
+	if (frame_profile_arg.found() )
+	{
+		Cmdline_frame_profile = true;
+	}
+
+	if (debug_window_arg.found()) {
+		Cmdline_debug_window = true;
+	}
+
+	if (show_video_info.found())
+	{
+		Cmdline_show_video_info = true;
 	}
 
 	//Deprecated flags - CommanderDJ

@@ -16,6 +16,7 @@
 #include "model/modelrender.h"
 #include "object/object.h"
 #include "render/3d.h"
+#include "render/batching.h"
 #include "ship/ship.h"
 #include "ship/shiphit.h"
 #include "weapon/shockwave.h"
@@ -25,8 +26,8 @@
 // Module-wide globals
 // -----------------------------------------------------------
 
-static char *Default_shockwave_2D_filename = "shockwave01";
-static char *Default_shockwave_3D_filename = "shockwave.pof";
+static const char *Default_shockwave_2D_filename = "shockwave01";
+static const char *Default_shockwave_3D_filename = "shockwave.pof";
 static int Default_shockwave_loaded = 0;
 
 SCP_vector<shockwave_info> Shockwave_info;
@@ -136,8 +137,8 @@ int shockwave_create(int parent_objnum, vec3d *pos, shockwave_create_info *sci, 
 
 	orient = vmd_identity_matrix;
 	vm_angles_2_matrix(&orient, &sw->rot_angles);
-
-	objnum = obj_create( OBJ_SHOCKWAVE, real_parent, i, &orient, &sw->pos, sw->outer_radius, OF_RENDERS );
+    flagset<Object::Object_Flags> tmp_flags;
+	objnum = obj_create( OBJ_SHOCKWAVE, real_parent, i, &orient, &sw->pos, sw->outer_radius, tmp_flags + Object::Object_Flags::Renders);
 
 	if ( objnum == -1 ){
 		Int3();
@@ -176,7 +177,7 @@ void shockwave_delete_all()
 	while ( sw != &Shockwave_list ) {
 		next = sw->next;
 		Assert(sw->objnum != -1);
-		Objects[sw->objnum].flags |= OF_SHOULD_BE_DEAD;
+        Objects[sw->objnum].flags.set(Object::Object_Flags::Should_be_dead);
 		sw = next;
 	}
 }
@@ -255,7 +256,7 @@ void shockwave_move(object *shockwave_objp, float frametime)
 	sw->radius += (frametime * sw->speed);
 	if ( sw->radius > sw->outer_radius ) {
 		sw->radius = sw->outer_radius;
-		shockwave_objp->flags |= OF_SHOULD_BE_DEAD;
+        shockwave_objp->flags.set(Object::Object_Flags::Should_be_dead);
 		return;
 	}
 
@@ -272,14 +273,14 @@ void shockwave_move(object *shockwave_objp, float frametime)
 			if (wip->weapon_hitpoints <= 0)
 				continue;
 
-			if (!(wip->wi_flags2 & WIF2_TAKES_SHOCKWAVE_DAMAGE || (sw->weapon_info_index >= 0 && Weapon_info[sw->weapon_info_index].wi_flags2 & WIF2_CIWS)))
+			if (!(wip->wi_flags[Weapon::Info_Flags::Takes_shockwave_damage] || (sw->weapon_info_index >= 0 && Weapon_info[sw->weapon_info_index].wi_flags[Weapon::Info_Flags::Ciws])))
 				continue;
 		}
 
 	
 		if ( objp->type == OBJ_SHIP ) {
 			// don't blast navbuoys
-			if ( ship_get_SIF(objp->instance) & SIF_NAVBUOY ) {
+			if ( ship_get_SIF(objp->instance)[Ship::Info_Flags::Navbuoy] ) {
 				continue;
 			}
 		}
@@ -311,7 +312,7 @@ void shockwave_move(object *shockwave_objp, float frametime)
 		case OBJ_SHIP:
 			sw->obj_sig_hitlist[sw->num_objs_hit++] = objp->signature;
 			// If we're doing an AoE Electronics shockwave, do the electronics stuff. -MageKing17
-			if ( (sw->weapon_info_index >= 0) && (Weapon_info[sw->weapon_info_index].wi_flags3 & WIF3_AOE_ELECTRONICS) && !(objp->flags & OF_INVULNERABLE) ) {
+			if ( (sw->weapon_info_index >= 0) && (Weapon_info[sw->weapon_info_index].wi_flags[Weapon::Info_Flags::Aoe_Electronics]) && !(objp->flags[Object::Object_Flags::Invulnerable]) ) {
 				weapon_do_electronics_effect(objp, &sw->pos, sw->weapon_info_index);
 			}
 			ship_apply_global_damage(objp, shockwave_objp, &sw->pos, damage );
@@ -328,7 +329,7 @@ void shockwave_move(object *shockwave_objp, float frametime)
 			objp->hull_strength -= damage;
 			if (objp->hull_strength < 0.0f) {
 				Weapons[objp->instance].lifeleft = 0.01f;
-				Weapons[objp->instance].weapon_flags |= WF_DESTROYED_BY_WEAPON;
+				Weapons[objp->instance].weapon_flags.set(Weapon::Weapon_Flags::Destroyed_by_weapon);
 			}
 			break;
 		default:
@@ -361,7 +362,7 @@ void shockwave_move(object *shockwave_objp, float frametime)
 * @param objp	pointer to shockwave object
 * @param scene	the scene's draw list we're adding this to
 */
-void shockwave_render(object *objp, draw_list *scene)
+void shockwave_render(object *objp, model_draw_list *scene)
 {
 	shockwave		*sw;
 	vertex			p;
@@ -397,43 +398,25 @@ void shockwave_render(object *objp, draw_list *scene)
 		if ( Cmdline_fb_explosions ) {
 			g3_transfer_vertex(&p, &sw->pos);
 
-			distortion_add_bitmap_rotated(
-				Shockwave_info[1].bitmap_id+shockwave_get_framenum(objp->instance, Shockwave_info[1].bitmap_id),
-				TMAP_FLAG_TEXTURED | TMAP_HTL_3D_UNLIT | TMAP_FLAG_SOFT_QUAD | TMAP_FLAG_DISTORTION, 
-				&p, 
-				fl_radians(sw->rot_angles.p), 
-				sw->radius,
-				((sw->time_elapsed/sw->total_time)>0.9f)?(1.0f-(sw->time_elapsed/sw->total_time))*10.0f:1.0f
-				);
+			float intensity = ((sw->time_elapsed / sw->total_time) > 0.9f) ? (1.0f - (sw->time_elapsed / sw->total_time))*10.0f : 1.0f;
+			batching_add_distortion_bitmap_rotated(Shockwave_info[1].bitmap_id + shockwave_get_framenum(objp->instance, Shockwave_info[1].bitmap_id), &p, fl_radians(sw->rot_angles.p), sw->radius, intensity);
 		}
 	} else {
 		g3_transfer_vertex(&p, &sw->pos);
 
 		if ( Cmdline_fb_explosions ) {
-			distortion_add_bitmap_rotated(
-				sw->current_bitmap, 
-				TMAP_FLAG_TEXTURED | TMAP_HTL_3D_UNLIT | TMAP_FLAG_SOFT_QUAD | TMAP_FLAG_DISTORTION, 
-				&p, 
-				fl_radians(sw->rot_angles.p), 
-				sw->radius,
-				((sw->time_elapsed/sw->total_time)>0.9f)?(1.0f-(sw->time_elapsed/sw->total_time))*10.0f:1.0f
-			);
+			float intensity = ((sw->time_elapsed / sw->total_time) > 0.9f) ? (1.0f - (sw->time_elapsed / sw->total_time)) * 10.0f : 1.0f;
+			batching_add_distortion_bitmap_rotated(sw->current_bitmap, &p, fl_radians(sw->rot_angles.p), sw->radius, intensity);
 		}
 
-		batch_add_bitmap_rotated(
-			sw->current_bitmap, 
-			TMAP_FLAG_TEXTURED | TMAP_HTL_3D_UNLIT | TMAP_FLAG_SOFT_QUAD | TMAP_FLAG_EMISSIVE,
-			&p, 
-			fl_radians(sw->rot_angles.p), 
-			sw->radius
-		);
+		batching_add_volume_bitmap_rotated(sw->current_bitmap, &p, fl_radians(sw->rot_angles.p), sw->radius);
 	}
 }
 
 /**
  * Call to load a shockwave, or add it and then load it
  */
-int shockwave_load(char *s_name, bool shock_3D)
+int shockwave_load(const char *s_name, bool shock_3D)
 {
 	size_t i;
 	int s_index = -1;
@@ -447,7 +430,7 @@ int shockwave_load(char *s_name, bool shock_3D)
 
 	for (i = 0; i < Shockwave_info.size(); i++) {
 		if ( !stricmp(Shockwave_info[i].filename, s_name) ) {
-			s_index = i;
+			s_index = (int)i;
 			break;
 		}
 	}

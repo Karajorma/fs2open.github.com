@@ -256,7 +256,7 @@ void HudGaugeReticle::render(float frametime)
 		fp.clear();
 		getFirepointStatus();
 		
-		if (fp.size() > 0) {
+		if (!fp.empty()) {
 			int ax, ay;
 			bm_get_info(crosshair.first_frame, &ax, &ay);
 			int centerX = position[0] + (ax / 2);
@@ -306,19 +306,19 @@ void HudGaugeReticle::getFirepointStatus() {
 						bankactive = 1;
 					else if (timestamp_elapsed(shipp->weapons.primary_animation_done_time[i]))
 						bankactive = 1;
-					else if (i == shipp->weapons.current_primary_bank || shipp->flags & SF_PRIMARY_LINKED)
+					else if (i == shipp->weapons.current_primary_bank || shipp->flags[Ship::Ship_Flags::Primary_linked])
 						bankactive = 2;
 
 					int num_slots = pm->gun_banks[i].num_slots;
 					for (int j = 0; j < num_slots; j++) {
 						int fpactive = bankactive;
 
-						if (sip->flags2 & SIF2_DYN_PRIMARY_LINKING) {
+						if (sip->flags[Ship::Info_Flags::Dyn_primary_linking]) {
 							// If this firepoint is not among the next shot(s) to be fired, dim it one step
 							if ( !( (j >= (shipp->last_fired_point[i]+1) % num_slots) && (j <= (shipp->last_fired_point[i]+swp->primary_bank_slot_count[i]) % num_slots) ) ) {
 								fpactive--;
 							}
-						} else if (Weapon_info[swp->primary_bank_weapons[i]].wi_flags2 & WIF2_CYCLE) {
+						} else if (Weapon_info[swp->primary_bank_weapons[i]].wi_flags[Weapon::Info_Flags::Cycle]) {
 							// If this firepoint is not the next one to be fired, dim it one step
 							if (j != (shipp->last_fired_point[i]+1) % num_slots) {
 								fpactive--;
@@ -570,7 +570,7 @@ void HudGaugeThrottle::render(float frametime)
 	}
 	
 	if ( Show_min_speed ) {
-		renderPrintf(position[0] + Zero_speed_offsets[0], position[1] + Zero_speed_offsets[1], XSTR( "0", 292));
+		renderPrintf(position[0] + Zero_speed_offsets[0], position[1] + Zero_speed_offsets[1], "%s", XSTR( "0", 292));
 	}
 }
 
@@ -599,7 +599,7 @@ void HudGaugeThrottle::renderThrottleSpeed(float current_speed, int y_end)
 		sy = position[1] + Orbit_center_offsets[1];
 	}
 	
-	renderPrintf(sx, sy, buf);
+	renderPrintf(sx, sy, "%s", buf);
 
 	if ( object_get_gliding(Player_obj) ) { 
 		if ( Use_custom_glide ) {
@@ -919,7 +919,7 @@ void HudGaugeWeaponLinking::render(float frametime)
 			if ( swp->current_primary_bank == -1 ) {
 				frame_offset = 0;	
 			} else {
-				if ( Player_ship->flags & SF_PRIMARY_LINKED ) {
+				if ( Player_ship->flags[Ship::Ship_Flags::Primary_linked] ) {
 					frame_offset = 3;
 				} else {
 					if ( swp->current_primary_bank == 0 ) {

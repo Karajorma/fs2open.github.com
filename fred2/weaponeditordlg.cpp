@@ -203,9 +203,9 @@ BOOL WeaponEditorDlg::OnInitDialog()
 		list->SetItemDataPtr(z, &pilot);
 		ptr = GET_FIRST(&obj_used_list);
 		while (ptr != END_OF_LIST(&obj_used_list)) {
-			if (((ptr->type == OBJ_SHIP) || (ptr->type == OBJ_START)) && (ptr->flags & OF_MARKED)) {
+			if (((ptr->type == OBJ_SHIP) || (ptr->type == OBJ_START)) && (ptr->flags[Object::Object_Flags::Marked])) {
 				inst = ptr->instance;
-				if (!(ship_get_SIF(inst) & (SIF_BIG_SHIP | SIF_HUGE_SHIP)))
+                if (!(Ship_info[Ships[inst].ship_info_index].is_big_or_huge()))
 					big = 0;
 
 				if (!flag) {
@@ -235,7 +235,7 @@ BOOL WeaponEditorDlg::OnInitDialog()
 		}
 
 	} else {
-		if (!(ship_get_SIF(m_ship) & (SIF_BIG_SHIP | SIF_HUGE_SHIP)))
+        if (!(Ship_info[Ships[m_ship].ship_info_index].is_big_or_huge()))
 			big = 0;
 
 		m_ship_class = Ships[m_ship].ship_info_index;
@@ -256,7 +256,7 @@ BOOL WeaponEditorDlg::OnInitDialog()
 	}
 
 	for (i=0; i<end1; i++){
-		if ((Weapon_info[i].wi_flags & WIF_CHILD) || (!big && (Weapon_info[i].wi_flags & WIF_BIG_ONLY))){
+		if ((Weapon_info[i].wi_flags[Weapon::Info_Flags::Child]) || (!big && (Weapon_info[i].wi_flags[Weapon::Info_Flags::Big_only]))){
 			end1 = i;
 		}
 	}
@@ -280,7 +280,7 @@ BOOL WeaponEditorDlg::OnInitDialog()
 	}
 
 	for (i=First_secondary_index; i<end2; i++){
-		if ((Weapon_info[i].wi_flags & WIF_CHILD) || (!big && (Weapon_info[i].wi_flags & WIF_BIG_ONLY))){
+		if ((Weapon_info[i].wi_flags[Weapon::Info_Flags::Child]) || (!big && (Weapon_info[i].wi_flags[Weapon::Info_Flags::Big_only]))){
 			end2 = i;
 		}
 	}
@@ -353,10 +353,10 @@ void WeaponEditorDlg::change_selection()
 			m_missile4 += First_secondary_index;
 
 		cur_weapon->secondary_bank_weapons[3] = m_missile4 - 1;
-		cur_weapon->secondary_bank_ammo[0] = m_ammo_max1 ? (m_ammo1 * 100 / m_ammo_max1) : 0;
-		cur_weapon->secondary_bank_ammo[1] = m_ammo_max2 ? (m_ammo2 * 100 / m_ammo_max2) : 0;
-		cur_weapon->secondary_bank_ammo[2] = m_ammo_max3 ? (m_ammo3 * 100 / m_ammo_max3) : 0;
-		cur_weapon->secondary_bank_ammo[3] = m_ammo_max4 ? (m_ammo4 * 100 / m_ammo_max4) : 0;
+		cur_weapon->secondary_bank_ammo[0] = m_ammo_max1 ? fl2ir(m_ammo1 * 100.0f / m_ammo_max1) : 0;
+		cur_weapon->secondary_bank_ammo[1] = m_ammo_max2 ? fl2ir(m_ammo2 * 100.0f / m_ammo_max2) : 0;
+		cur_weapon->secondary_bank_ammo[2] = m_ammo_max3 ? fl2ir(m_ammo3 * 100.0f / m_ammo_max3) : 0;
+		cur_weapon->secondary_bank_ammo[3] = m_ammo_max4 ? fl2ir(m_ammo4 * 100.0f / m_ammo_max4) : 0;
 		if (m_multi_edit) {
 			if (!strlen(a1))
 				cur_weapon->secondary_bank_ammo[0] = BLANK_FIELD;
@@ -425,7 +425,7 @@ void WeaponEditorDlg::change_selection()
 				m_ammo_max1 = get_max_ammo_count_for_turret_bank(cur_weapon, 0, m_missile1 - 1);
 			}
 			if (cur_weapon->secondary_bank_ammo[0] != BLANK_FIELD)
-				m_ammo1 = cur_weapon->secondary_bank_ammo[0] * m_ammo_max1 / 100;
+				m_ammo1 = fl2ir(cur_weapon->secondary_bank_ammo[0] * m_ammo_max1 / 100.0f);
 			m_missile1 -= First_secondary_index;
 		}
 
@@ -448,7 +448,7 @@ void WeaponEditorDlg::change_selection()
 				m_ammo_max2 = get_max_ammo_count_for_turret_bank(cur_weapon, 1, m_missile2 - 1);
 			}
 			if (cur_weapon->secondary_bank_ammo[1] != BLANK_FIELD)
-				m_ammo2 = cur_weapon->secondary_bank_ammo[1] * m_ammo_max2 / 100;
+				m_ammo2 = fl2ir(cur_weapon->secondary_bank_ammo[1] * m_ammo_max2 / 100.0f);
 			m_missile2 -= First_secondary_index;
 		}
 
@@ -471,7 +471,7 @@ void WeaponEditorDlg::change_selection()
 				m_ammo_max3 = get_max_ammo_count_for_turret_bank(cur_weapon, 2, m_missile3 - 1);
 			}
 			if (cur_weapon->secondary_bank_ammo[2] != BLANK_FIELD)
-				m_ammo3 = cur_weapon->secondary_bank_ammo[2] * m_ammo_max3 / 100;
+				m_ammo3 = fl2ir(cur_weapon->secondary_bank_ammo[2] * m_ammo_max3 / 100.0f);
 			m_missile3 -= First_secondary_index;
 		}
 
@@ -494,7 +494,7 @@ void WeaponEditorDlg::change_selection()
 				m_ammo_max4 = get_max_ammo_count_for_turret_bank(cur_weapon, 3, m_missile4 - 1);
 			}
 			if (cur_weapon->secondary_bank_ammo[3] != BLANK_FIELD)
-				m_ammo4 = cur_weapon->secondary_bank_ammo[3] * m_ammo_max4 / 100;
+				m_ammo4 = fl2ir(cur_weapon->secondary_bank_ammo[3] * m_ammo_max4 / 100.0f);
 			m_missile4 -= First_secondary_index;
 		}
 
@@ -558,7 +558,7 @@ void WeaponEditorDlg::update_pilot()
 	if (m_multi_edit) {
 		ptr = GET_FIRST(&obj_used_list);
 		while (ptr != END_OF_LIST(&obj_used_list)) {
-			if (((ptr->type == OBJ_SHIP) || (ptr->type == OBJ_START)) && (ptr->flags & OF_MARKED)) {
+			if (((ptr->type == OBJ_SHIP) || (ptr->type == OBJ_START)) && (ptr->flags[Object::Object_Flags::Marked])) {
 				weapon = &Ships[ptr->instance].weapons;
 
 				if (pilot.ai_class >= 0)

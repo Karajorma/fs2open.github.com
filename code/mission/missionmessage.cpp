@@ -28,7 +28,7 @@
 #include "network/multimsgs.h"
 #include "network/multiutil.h"
 #include "parse/parselo.h"
-#include "parse/scripting.h"
+#include "scripting/scripting.h"
 #include "parse/sexp.h"
 #include "ship/ship.h"
 #include "ship/subsysdamage.h"
@@ -172,7 +172,7 @@ int MessageQ_num;			// keeps track of number of entries on the queue.
 int Num_personas;
 Persona *Personas = NULL;
 
-char *Persona_type_names[MAX_PERSONA_TYPES] = 
+const char *Persona_type_names[MAX_PERSONA_TYPES] =
 {
 //XSTR:OFF
 	"wingman",
@@ -439,7 +439,7 @@ void message_parse(bool importing_from_fsm)
 		stuff_string(buf, F_NAME); 
 		for (SCP_vector<SCP_string>::iterator iter = Builtin_moods.begin(); iter != Builtin_moods.end(); ++iter) {
 			if (iter->compare(buf) == 0) {
-				msg.mood = iter - Builtin_moods.begin();
+				msg.mood = (int)std::distance(Builtin_moods.begin(), iter);
 				found = true;
 				break;
 			}
@@ -462,7 +462,7 @@ void message_parse(bool importing_from_fsm)
 		for (SCP_vector<SCP_string>::iterator parsed_moods = buff.begin(); parsed_moods != buff.end(); ++parsed_moods) {
 			for (SCP_vector<SCP_string>::iterator iter = Builtin_moods.begin(); iter != Builtin_moods.end(); ++iter) {
 				if (!stricmp(iter->c_str(), parsed_moods->c_str())) {
-					msg.excluded_moods.push_back(iter - Builtin_moods.begin());
+					msg.excluded_moods.push_back((int)std::distance(Builtin_moods.begin(), iter));
 					found = true;
 					break;
 				}
@@ -546,110 +546,117 @@ void parse_msgtbl()
 	Message_waves.reserve(300);
 	Message_avis.reserve(30);
 
-	read_file_text("messages.tbl", CF_TYPE_TABLES);
-	reset_parse();
-	Num_messages = 0;
-	Num_personas = 0;
+	try {
+		read_file_text("messages.tbl", CF_TYPE_TABLES);
+		reset_parse();
+		Num_messages = 0;
+		Num_personas = 0;
 
-	// Goober5000 - ugh, ugly hack to fix the FS2 retail tables
-	char *pVawacs25 = strstr(Mp, "Vawacs25.wav");
-	if (pVawacs25)
-	{
-		char *pAwacs75 = strstr(pVawacs25, "Awacs75.wav");
-		if (pAwacs75)
+		// Goober5000 - ugh, ugly hack to fix the FS2 retail tables
+		char *pVawacs25 = strstr(Mp, "Vawacs25.wav");
+		if (pVawacs25)
 		{
-			// move the 'V' from the first filename to the second, and adjust the 'A' case
-			*pVawacs25 = 'A';
-			for (i = 1; i < (pAwacs75 - pVawacs25) - 1; i++)
-				pVawacs25[i] = pVawacs25[i+1];
-			pAwacs75[-1] = 'V';
-			pAwacs75[0] = 'a';
-		}
-	}
-
-	// now we can start parsing
-	if (optional_string("#Message Frequencies")) {
-		while (!required_string_one_of(3, "$Name:", "#Personas", "#Moods" )) {
-			message_frequency_parse();
-		}
-	}	
-
-	Builtin_moods.push_back("Default");
-	if (optional_string("#Moods")) {
-		message_moods_parse();
-	}	
-
-
-	required_string("#Personas");
-	while ( required_string_either("#Messages", "$Persona:")){
-		persona_parse();
-	}
-
-	required_string("#Messages");
-	while (required_string_either("#End", "$Name:")){
-		message_parse();
-	}
-
-	required_string("#End");
-
-	// save the number of builtin message things -- make initing between missions easier
-	Num_builtin_messages = Num_messages;
-	Num_builtin_avis = Num_message_avis;
-	Num_builtin_waves = Num_message_waves;
-
-	
-	memset(Valid_builtin_message_types, 0, sizeof(int)*MAX_BUILTIN_MESSAGE_TYPES); 
-	// now cycle through the messages to determine which type of builtins we have messages for
-	for (i = 0; i < Num_builtin_messages; i++) {
-		for (j = 0; j < MAX_BUILTIN_MESSAGE_TYPES; j++) {
-			if (!(stricmp(Messages[i].name, Builtin_messages[j].name))) {
-				Valid_builtin_message_types[j] = 1; 
-				break;
-			}
-		}
-	}
-
-
-	// additional table part!
-	generic_message_filenames.clear();
-	generic_message_filenames.push_back("none");
-	generic_message_filenames.push_back("cuevoice");
-	generic_message_filenames.push_back("emptymsg");
-	generic_message_filenames.push_back("generic");
-	generic_message_filenames.push_back("msgstart");
-
-	if (optional_string("#Simulated Speech Overrides"))
-	{
-		char filename[MAX_FILENAME_LEN];
-
-		while (required_string_either("#End", "$File Name:"))
-		{
-			required_string("$File Name:");
-			stuff_string(filename, F_NAME, MAX_FILENAME_LEN);
-
-			// get extension
-			char *ptr = strchr(filename, '.');
-			if (ptr == NULL)
+			char *pAwacs75 = strstr(pVawacs25, "Awacs75.wav");
+			if (pAwacs75)
 			{
-				Warning(LOCATION, "Simulated speech override file '%s' was provided with no extension!", filename);
-				continue;
+				// move the 'V' from the first filename to the second, and adjust the 'A' case
+				*pVawacs25 = 'A';
+				for (i = 1; i < (pAwacs75 - pVawacs25) - 1; i++)
+					pVawacs25[i] = pVawacs25[i+1];
+				pAwacs75[-1] = 'V';
+				pAwacs75[0] = 'a';
 			}
+		}
 
-			// test extension
-			if (stricmp(ptr, ".ogg") && stricmp(ptr, ".wav"))
-			{
-				Warning(LOCATION, "Simulated speech override file '%s' was provided with an extension other than .wav or .ogg!", filename);
-				continue;
+		// now we can start parsing
+		if (optional_string("#Message Frequencies")) {
+			while (!required_string_one_of(3, "$Name:", "#Personas", "#Moods" )) {
+				message_frequency_parse();
 			}
+		}
 
-			// truncate extension
-			*ptr = '\0';
+		Builtin_moods.push_back("Default");
+		if (optional_string("#Moods")) {
+			message_moods_parse();
+		}
 
-			// add truncated file name
-			generic_message_filenames.push_back(filename);
+
+		required_string("#Personas");
+		while ( required_string_either("#Messages", "$Persona:")){
+			persona_parse();
+		}
+
+		required_string("#Messages");
+		while (required_string_either("#End", "$Name:")){
+			message_parse();
 		}
 
 		required_string("#End");
+
+		// save the number of builtin message things -- make initing between missions easier
+		Num_builtin_messages = Num_messages;
+		Num_builtin_avis = Num_message_avis;
+		Num_builtin_waves = Num_message_waves;
+
+
+		memset(Valid_builtin_message_types, 0, sizeof(int)*MAX_BUILTIN_MESSAGE_TYPES);
+		// now cycle through the messages to determine which type of builtins we have messages for
+		for (i = 0; i < Num_builtin_messages; i++) {
+			for (j = 0; j < MAX_BUILTIN_MESSAGE_TYPES; j++) {
+				if (!(stricmp(Messages[i].name, Builtin_messages[j].name))) {
+					Valid_builtin_message_types[j] = 1;
+					break;
+				}
+			}
+		}
+
+
+		// additional table part!
+		generic_message_filenames.clear();
+		generic_message_filenames.push_back("none");
+		generic_message_filenames.push_back("cuevoice");
+		generic_message_filenames.push_back("emptymsg");
+		generic_message_filenames.push_back("generic");
+		generic_message_filenames.push_back("msgstart");
+
+		if (optional_string("#Simulated Speech Overrides"))
+		{
+			char filename[MAX_FILENAME_LEN];
+
+			while (required_string_either("#End", "$File Name:"))
+			{
+				required_string("$File Name:");
+				stuff_string(filename, F_NAME, MAX_FILENAME_LEN);
+
+				// get extension
+				char *ptr = strchr(filename, '.');
+				if (ptr == NULL)
+				{
+					Warning(LOCATION, "Simulated speech override file '%s' was provided with no extension!", filename);
+					continue;
+				}
+
+				// test extension
+				if (stricmp(ptr, ".ogg") && stricmp(ptr, ".wav"))
+				{
+					Warning(LOCATION, "Simulated speech override file '%s' was provided with an extension other than .wav or .ogg!", filename);
+					continue;
+				}
+
+				// truncate extension
+				*ptr = '\0';
+
+				// add truncated file name
+				generic_message_filenames.push_back(filename);
+			}
+
+			required_string("#End");
+		}
+	}
+	catch (const parse::ParseException& e)
+	{
+		mprintf(("MISSIONCAMPAIGN: Unable to parse 'messages.tbl'!  Error message = %s.\n", e.what()));
+		return;
 	}
 }
 
@@ -1181,7 +1188,7 @@ void message_play_anim( message_q *q )
 	// support ships use a wingman head.
 	// terran command uses its own set of heads.
 	if ( (!anim_info->exists) &&	// if the base animation doesn't exist, then a, b, or c needs to be appended
-		((q->message_num < Num_builtin_messages) || !(_strnicmp(HEAD_PREFIX_STRING, ani_name, strlen(HEAD_PREFIX_STRING)-1))) ) {
+		((q->message_num < Num_builtin_messages) || !(strnicmp(HEAD_PREFIX_STRING, ani_name, strlen(HEAD_PREFIX_STRING)-1))) ) {
 		int subhead_selected = FALSE;
 		persona_index = m->persona_index;
 		
@@ -1336,7 +1343,7 @@ void message_queue_process()
 
 			// see if the ship sending this message is dying.  If do, kill wave and anim
 			if ( Playing_messages[i].shipnum != -1 ) {
-				if ( (Ships[Playing_messages[i].shipnum].flags & SF_DYING) && (Playing_messages[i].builtin_type != MESSAGE_WINGMAN_SCREAM) ) {
+				if ( (Ships[Playing_messages[i].shipnum].flags[Ship::Ship_Flags::Dying]) && (Playing_messages[i].builtin_type != MESSAGE_WINGMAN_SCREAM) ) {
 					int shipnum;
 
 					shipnum = Playing_messages[i].shipnum;
@@ -1347,7 +1354,7 @@ void message_queue_process()
 					// MWA 3/24/98 -- save shipnum before killing message
 					// 
 					Assert( shipnum >= 0 );
-					if ( !(Ships[shipnum].flags & SF_SHIP_HAS_SCREAMED) && !(Ships[shipnum].flags2 & SF2_NO_DEATH_SCREAM) ) {
+					if ( !(Ships[shipnum].flags[Ship::Ship_Flags::Ship_has_screamed]) && !(Ships[shipnum].flags[Ship::Ship_Flags::No_death_scream]) ) {
 						ship_scream( &Ships[shipnum] );
 					}
 					continue;							// this should keep us in the while() loop with same value of i.														
@@ -1532,7 +1539,7 @@ void message_queue_process()
 	else
 		message_translate_tokens(buf, q->special_message);
 
-	Message_expire = timestamp(42 * strlen(buf));
+	Message_expire = timestamp(static_cast<int>(42 * strlen(buf)));
 	// AL: added 07/14/97.. only play avi/sound if in gameplay
 	if ( gameseq_get_state() != GS_STATE_GAME_PLAY )
 		goto all_done;
@@ -1547,7 +1554,7 @@ void message_queue_process()
 		if (Message_shipnum < 0) {
 			goto all_done;
 		}
-		if (!((Ship_info[Ships[Message_shipnum].ship_info_index].flags & SIF_SMALL_SHIP) || (Ships[Message_shipnum].flags2 & SF2_ALWAYS_DEATH_SCREAM)) ) {
+		if (!(Ship_info[Ships[Message_shipnum].ship_info_index].is_small_ship() || (Ships[Message_shipnum].flags[Ship::Ship_Flags::Always_death_scream])) ) {
 			goto all_done;
 		}
 	}
@@ -1578,7 +1585,7 @@ void message_queue_process()
 		ship *shipp = &Ships[Message_shipnum];
 		if ( shipp->callsign_index >= 0 ) {
 			hud_stuff_ship_callsign( who_from, shipp );
-		} else if ( ((Iff_info[shipp->team].flags & IFFF_WING_NAME_HIDDEN) && (shipp->wingnum != -1)) || (shipp->flags2 & SF2_HIDE_SHIP_NAME) ) {
+		} else if ( ((Iff_info[shipp->team].flags & IFFF_WING_NAME_HIDDEN) && (shipp->wingnum != -1)) || (shipp->flags[Ship::Ship_Flags::Hide_ship_name]) ) {
 			hud_stuff_ship_class( who_from, shipp );
 		} else {
 			end_string_at_first_hash_symbol(who_from);
@@ -1615,7 +1622,7 @@ all_done:
 }
 
 // queues up a message to display to the player
-void message_queue_message( int message_num, int priority, int timing, char *who_from, int source, int group, int delay, int builtin_type )
+void message_queue_message( int message_num, int priority, int timing, const char *who_from, int source, int group, int delay, int builtin_type )
 {
 	int i, m_persona;
 	char temp_buf[MESSAGE_LENGTH];
@@ -1716,7 +1723,8 @@ void message_queue_message( int message_num, int priority, int timing, char *who
 // type personas.  ship is the ship we should assign a persona to
 int message_get_persona( ship *shipp )
 {
-	int i = 0, ship_type, count;
+	int i = 0, count;
+    ship_info* sip;
 	int *slist = new int[Num_personas];
 	memset( slist, 0, sizeof(int) * Num_personas );
 
@@ -1729,15 +1737,15 @@ int message_get_persona( ship *shipp )
 		}
 
 		// get the type of ship (i.e. support, fighter/bomber, etc)
-		ship_type = Ship_info[shipp->ship_info_index].flags;
+		sip = &Ship_info[shipp->ship_info_index];
 
 		int persona_needed;
 		count = 0;
 
-		if ( ship_type & (SIF_FIGHTER|SIF_BOMBER) )
+		if ( sip->is_fighter_bomber() )
 		{
 			persona_needed = PERSONA_FLAG_WINGMAN;
-		} else if ( ship_type & SIF_SUPPORT ) 
+		} else if ( sip->flags[Ship::Info_Flags::Support] ) 
 		{
 			persona_needed = PERSONA_FLAG_SUPPORT;
 		}
@@ -1840,7 +1848,7 @@ int message_filter_multi(int id)
 void message_send_unique_to_player( char *id, void *data, int m_source, int priority, int group, int delay )
 {
 	int i, source;
-	char *who_from;
+	const char *who_from;
 
 	source = 0;
 	who_from = NULL;
@@ -1929,7 +1937,7 @@ void message_send_builtin_to_player( int type, ship *shipp, int priority, int ti
 	int i, persona_index = -1, persona_species = -1, message_index = -1, random_selection = -1;
 	int source;
 	int num_matching_builtins = 0;
-	char *who_from;
+	const char *who_from;
 	int best_match = -1;
 
 	matching_builtin current_builtin;
@@ -1937,11 +1945,11 @@ void message_send_builtin_to_player( int type, ship *shipp, int priority, int ti
 
 
 	// if we aren't showing builtin msgs, bail
-	if (The_mission.flags & MISSION_FLAG_NO_BUILTIN_MSGS)
+	if (The_mission.flags[Mission::Mission_Flags::No_builtin_msgs])
 		return;
 
 	// Karajorma - If we aren't showing builtin msgs from command and this is not a ship, bail
-	if ( (shipp == NULL) && (The_mission.flags & MISSION_FLAG_NO_BUILTIN_COMMAND) ) 
+	if ( (shipp == NULL) && (The_mission.flags[Mission::Mission_Flags::No_builtin_command]) ) 
 		return;
 
 	// builtin type isn't supported by this version of the table
@@ -1966,7 +1974,7 @@ void message_send_builtin_to_player( int type, ship *shipp, int priority, int ti
 	// see if there is a persona assigned to this ship.  If not, then try to assign one!!!
 	if ( shipp ) {
 		// Karajorma - the game should assert if a silenced ship gets this far
-		Assert( !(shipp->flags2 & SF2_NO_BUILTIN_MESSAGES) );
+		Assert( !(shipp->flags[Ship::Ship_Flags::No_builtin_messages]) );
 
 		if ( shipp->persona_index == -1 )
 			shipp->persona_index = message_get_persona( shipp );
@@ -1977,12 +1985,12 @@ void message_send_builtin_to_player( int type, ship *shipp, int priority, int ti
 			nprintf(("messaging", "Couldn't find persona for %s\n", shipp->ship_name ));	
 
 		// be sure that this ship can actually send a message!!! (i.e. not-not-flyable -- get it!)
-		Assert( !(Ship_info[shipp->ship_info_index].flags & SIF_NOT_FLYABLE) );		// get allender or alan
+		Assert( Ship_info[shipp->ship_info_index].is_flyable() );		// get allender or alan
 	} else {
 		persona_index = The_mission.command_persona;				// use the terran command persona
 	}
 
-	char *name = Builtin_messages[type].name;
+	const char *name = Builtin_messages[type].name;
 
 	if (persona_index >= 0) {
 		persona_species = Personas[persona_index].species;
@@ -2218,21 +2226,21 @@ void message_maybe_distort()
 //
 void message_maybe_distort_text(char *text, int shipnum)
 {
-	int i, j, len, run, curr_offset, voice_duration, next_distort;
+	int voice_duration;
 
 	if ( comm_between_player_and_ship(shipnum) == COMM_OK ) { 
 		return;
 	}
 
-	len = strlen(text);
+	auto len = strlen(text);
 	if ( Message_wave_duration == 0 ) {
-		next_distort = 5+myrand()%5;
-		for ( i = 0; i < len; i++ ) {
+		size_t next_distort = 5+myrand()%5;
+		for ( size_t i = 0; i < len; i++ ) {
 			if ( i == next_distort ) {
-				run = 3+myrand()%5;
+				size_t run = 3+myrand()%5;
 				if ( i+run > len )
 					run = len-i;
-				for ( j = 0; j < run; j++) {
+				for ( size_t j = 0; j < run; j++) {
 					text[i++] = '-';
 					if ( i >= len )
 						break;
@@ -2248,10 +2256,11 @@ void message_maybe_distort_text(char *text, int shipnum)
 	// distort text
 	Distort_num = myrand()%MAX_DISTORT_PATTERNS;
 	Distort_next = 0;
-	curr_offset = 0;
+	size_t curr_offset = 0;
 	while (voice_duration > 0) {
-		run = fl2i(Distort_patterns[Distort_num][Distort_next] * len);
+		size_t run = fl2i(Distort_patterns[Distort_num][Distort_next] * len);
 		if (Distort_next & 1) {
+			size_t i;
 			for ( i = curr_offset; i < MIN(len, curr_offset+run); i++ ) {
 				if ( text[i] != ' ' ) 
 					text[i] = '-';
@@ -2310,7 +2319,7 @@ void message_pagein_mission_messages()
 // ---------------------------------------------------
 // Add and remove messages - used by autopilot code now, but useful elswhere
 
-bool add_message(char *name, char *message, int persona_index, int multi_team)
+bool add_message(const char *name, char *message, int persona_index, int multi_team)
 {
 	MissionMessage msg; 
 	strcpy_s(msg.name, name);
@@ -2325,7 +2334,7 @@ bool add_message(char *name, char *message, int persona_index, int multi_team)
 	return true;
 }
 
-bool change_message(char *name, char *message, int persona_index, int multi_team)
+bool change_message(const char *name, char *message, int persona_index, int multi_team)
 {
 	for (int i = Num_builtin_messages; i < Num_messages; i++) 
 	{

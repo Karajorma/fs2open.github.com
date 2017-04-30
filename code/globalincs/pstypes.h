@@ -13,30 +13,23 @@
 #define _PSTYPES_H
 
 
+
+#include "windows_stub/config.h"
+#include "globalincs/scp_defines.h"
+#include "globalincs/toolchain.h"
+#include "utils/strings.h"
+
 #include <stdio.h>	// For NULL, etc
 #include <stdlib.h>
 #include <memory.h>
 #include <string.h>
-#include "globalincs/toolchain.h"
-
-#if defined( __x86_64__ ) || defined( _WIN64 )
-#define IAM_64BIT 1
-#endif
-
-
-#include "windows_stub/config.h"
-
-#include "globalincs/scp_defines.h"
-
-#include "SDL.h"
+#include <algorithm>
+#include <cstdint>
 
 // value to represent an uninitialized state in any int or uint
 #define UNINITIALIZED 0x7f8e6d9c
 
 #define MAX_PLAYERS	12
-
-#define USE_INLINE_ASM 1		// Define this to use inline assembly
-#define STRUCT_CMP(a, b) memcmp((void *)&a, (void *)&b, sizeof(a))
 
 #ifdef LOCAL
 #undef LOCAL
@@ -52,27 +45,19 @@
 #define DIR_SEPARATOR_STR  "/"
 #endif
 
-#ifdef IAM_64BIT
-typedef __int32 _fs_time_t;  // time_t here is 64-bit and we need 32-bit
-typedef __int32 fix;
+typedef std::int32_t _fs_time_t;  // time_t here is 64-bit and we need 32-bit
+typedef std::int32_t fix;
+
 // PTR compatible sizes
-typedef __int64 ptr_s;
-typedef unsigned __int64 ptr_u;
-#else
-typedef long fix;
-typedef	long _fs_time_t;
-typedef int ptr_s;
-typedef unsigned int ptr_u;
-#endif // 64-bit
+typedef ptrdiff_t ptr_s;
+typedef size_t ptr_u;
 
-typedef __int64 longlong;
-typedef unsigned __int64 ulonglong;
-typedef unsigned char ubyte;
-typedef unsigned short ushort;
-typedef unsigned int uint;
+typedef std::int64_t longlong;
+typedef std::uint64_t ulonglong;
+typedef std::uint8_t ubyte;
+typedef std::uint16_t ushort;
+typedef std::uint32_t uint;
 typedef unsigned long ulong;
-
-#define HARDWARE_ONLY
 
 //Stucture to store clipping codes in a word
 typedef struct ccodes {
@@ -186,7 +171,6 @@ typedef struct vertex {
 	screen3d	screen;				// screen space position (sw == 1/z)
 	uv_pair		texture_position;	// texture position
 	ubyte		r, g, b, a;			// color.  Use b for darkening;
-	ubyte		spec_r, spec_g, spec_b, spec_a;	//specular highlights -Bobboau
 	ubyte		codes;				// what sides of view pyramid this point is on/off.  0 = Inside view pyramid.
 	ubyte		flags;				// Projection flags.  Indicates whether it is projected or not or if projection overflowed.
 	ubyte		pad[2];				// pad structure to be 4 byte aligned.
@@ -205,21 +189,20 @@ struct particle_pnt {
 	vec3d up;
 };
 
-struct trail_shader_info {
-	vec3d pos;
-	vec3d fvec;
-
-	float intensity;
-	float width;
-	uv_pair tex_coord;
-};
-
 //def_list
-typedef struct flag_def_list {
-	char *name;
+struct flag_def_list {
+	const char *name;
 	int def;
 	ubyte var;
-} def_list;
+};
+
+template<class T>
+struct flag_def_list_new {
+    const char* name;			// The parseable representation of this flag
+    T def;				// The flag definition for this flag
+    bool in_use;		// Whether or not this flag is currently in use or obsolete
+    bool is_special;	// Whether this flag requires special processing. See parse_string_flag_list<T, T> for details
+};
 
 // weapon count list (mainly for pilot files)
 typedef struct wep_t {
@@ -291,7 +274,7 @@ extern int Global_error_count;
 	// No debug version of Int3
 	#define Int3() do { } while (0)
 #else
-	void debug_int3(char *file, int line);
+	void debug_int3(const char *file, int line);
 
 	// Debug version of Int3
 	#define Int3() debug_int3(__FILE__, __LINE__)
@@ -315,7 +298,9 @@ const float RAND_MAX_1f	= (1.0f / RAND_MAX);
 
 
 extern int Fred_running;  // Is Fred running, or FreeSpace?
+extern bool running_unittests;
 
+const size_t INVALID_SIZE = static_cast<size_t>(-1);
 
 //======================================================================================
 //======================================================================================
@@ -333,6 +318,7 @@ extern int Fred_running;  // Is Fred running, or FreeSpace?
 
 #ifdef SCP_SOLARIS // Solaris
 #define INTEL_INT(x)	x
+#define INTEL_LONG(x)   x
 #define INTEL_SHORT(x)	x
 #define INTEL_FLOAT(x)	(*x)
 #elif BYTE_ORDER == BIG_ENDIAN
@@ -340,11 +326,13 @@ extern int Fred_running;  // Is Fred running, or FreeSpace?
 #undef USE_INLINE_ASM
 
 #define INTEL_INT(x)	SDL_Swap32(x)
+#define INTEL_LONG(x)   SDL_Swap64(x)
 #define INTEL_SHORT(x)	SDL_Swap16(x)
 #define INTEL_FLOAT(x)	SDL_SwapFloat((*x))
 
 #else // Little Endian -
 #define INTEL_INT(x)	x
+#define INTEL_LONG(x)   x
 #define INTEL_SHORT(x)	x
 #define INTEL_FLOAT(x)	(*x)
 #endif // BYTE_ORDER
@@ -368,7 +356,9 @@ typedef struct lod_checker {
 //  - has >0 length
 //  - is not "none"
 //  - is not "<none>"
-#define VALID_FNAME(x) ( strlen((x)) && stricmp((x), "none") && stricmp((x), "<none>") )
+inline bool VALID_FNAME(const char* x) {
+	return strlen((x)) && stricmp((x), "none") && stricmp((x), "<none>");
+}
 
 
 // Callback Loading function.
@@ -391,38 +381,6 @@ extern int game_busy_callback( void (*callback)(int count), int delta_step = -1 
 // Call whenever loading to display cursor
 extern void game_busy(const char *filename = NULL);
 
-//=========================================================
-// Functions to monitor performance
-#ifndef NDEBUG
-
-class monitor {
-	public:
-	char	*name;
-	int	value;					// Value that gets cleared to 0 each frame.
-	int	min, max, sum, cnt;		// Min & Max of value.  Sum is used to calculate average
-	monitor(char *name);		// constructor
-};
-
-// Creates a monitor variable
-#define MONITOR(function_name)				monitor mon_##function_name(#function_name);
-
-// Increments a monitor variable
-#define MONITOR_INC(function_name,inc)		do { mon_##function_name.value+=(inc); } while(0)
-
-// Call this once per frame to update monitor file
-void monitor_update();
-
-#else
-
-#define MONITOR(function_name)
-
-#define MONITOR_INC(function_name,inc)		do { } while(0)
-
-// Call this once per frame to update monitor file
-#define monitor_update() do { } while(0)
-
-#endif
-
 #define NOX(s) s
 
 const char *XSTR(const char *str, int index);
@@ -440,68 +398,23 @@ template <class T> void CAP( T& v, T mn, T mx )
 // faster version of CAP()
 #define CLAMP(x, min, max) do { if ( (x) < (min) ) (x) = (min); else if ((x) > (max)) (x) = (max); } while(0)
 
-// ========================================================
-// stamp checksum stuff
-// ========================================================
-
-// here is the define for the stamp for this set of code
-#define STAMP_STRING "\001\001\001\001\002\002\002\002Read the Foundation Novels from Asimov.  I liked them."
-#define STAMP_STRING_LENGTH			80
-#define DEFAULT_CHECKSUM_STRING		"\001\001\001\001"
-#define DEFAULT_TIME_STRING			"\002\002\002\002"
-
-// macro to calculate the checksum for the stamp.  Put here so that we can use different methods
-// for different applications.  Requires the local variable 'checksum' to be defined!!!
-#define CALCULATE_STAMP_CHECKSUM() do {	\
-		int i, found;	\
-							\
-		checksum = 0;	\
-		for ( i = 0; i < (int)strlen(ptr); i++ ) {	\
-			found = 0;	\
-			checksum += ptr[i];	\
-			if ( checksum & 0x01 )	\
-				found = 1;	\
-			checksum = checksum >> 1;	\
-			if (found)	\
-				checksum |= 0x80000000;	\
-		}	\
-		checksum |= 0x80000000;	\
-	} while (0) ;
-
 //=========================================================
 // Memory management functions
 //=========================================================
 
 #include "globalincs/fsmemory.h"
 
-//=========================================================
-// Scripting
-//=========================================================
-//-WMC
-typedef struct script_hook
-{
-	//Override
-	int o_language;
-	int o_index;
-	//Actual hook
-	int h_language;
-	int h_index;
-} script_hook;
-
-extern void script_hook_init(script_hook *hook);
-extern bool script_hook_valid(script_hook *hook);
-
 class camid
 {
 private:
 	int sig;
-	uint idx;
+	size_t idx;
 public:
 	camid();
-	camid(int n_idx, int n_sig);
+	camid(size_t n_idx, int n_sig);
 
 	class camera *getCamera();
-	uint getIndex();
+	size_t getIndex();
 	int getSignature();
 	bool isValid();
 };
@@ -528,6 +441,9 @@ SCP_string dump_stacktrace();
 	const auto ptr_memset = std::memset;
 	#define memset memset_if_trivial_else_error
 
+// Put into std to be compatible with code that uses std::mem*
+namespace std
+{
 	template<typename T>
 	void *memset_if_trivial_else_error(T *memset_data, int ch, size_t count)
 	{
@@ -598,6 +514,12 @@ SCP_string dump_stacktrace();
 		static_assert(std::is_trivial<U>::value, "memmove on non-trivial object U");
 		return ptr_memmove(memmove_dest, memmove_src, count);
 	}
+}
+// Put into global namespace
+using std::memcpy_if_trivial_else_error;
+using std::memmove_if_trivial_else_error;
+using std::memset_if_trivial_else_error;
+
 	#endif // HAVE_CXX11
 #endif // NDEBUG
 

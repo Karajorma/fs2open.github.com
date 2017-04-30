@@ -14,7 +14,7 @@
 
 class p_object;
 struct wss_unit;
-struct ship_weapon;
+class ship_weapon;
 
 // mask regions for icons in the scrollable lists
 #define ICON_PRIMARY_0				28
@@ -35,6 +35,8 @@ struct ship_weapon;
 #define ICON_SHIP_SECONDARY_2		37
 #define ICON_SHIP_SECONDARY_3		38
 
+#define WEAPON_DESC_MAX_LINES			7				// max lines in the description incl. title
+#define WEAPON_DESC_MAX_LENGTH		50				// max chars per line of description text
 
 extern int Weapon_select_overlay_id;
 
